@@ -12,11 +12,11 @@ export const CHROME_PATH =
   process.env.CHROME_PATH ??
   join(process.env.HOME ?? '', '.cache/ms-playwright/chromium-1247/chrome-linux64/chrome');
 
-export async function launchWithExtension(userDataDir: string): Promise<{ context: BrowserContext; sw: Worker }> {
+export async function launchWithExtension(userDataDir: string, extraArgs: string[] = []): Promise<{ context: BrowserContext; sw: Worker }> {
   const context = await chromium.launchPersistentContext(userDataDir, {
     executablePath: CHROME_PATH,
     headless: process.env.HEADED ? false : true,
-    args: [`--disable-extensions-except=${EXT_DIR}`, `--load-extension=${EXT_DIR}`],
+    args: [`--disable-extensions-except=${EXT_DIR}`, `--load-extension=${EXT_DIR}`, ...extraArgs],
   });
   const sw = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
   return { context, sw };

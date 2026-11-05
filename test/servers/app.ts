@@ -17,6 +17,18 @@ export interface AppServer { origin: string; close(): Promise<void> }
 
 export async function startApp(): Promise<AppServer> {
   const server = http.createServer(async (req, res) => {
+    // Página que configura a Reporting API apontando para o sink (?sink=...).
+    if ((req.url ?? '').startsWith('/reporting.html')) {
+      const sink = new URL(req.url ?? '/', 'http://x').searchParams.get('sink') ?? '';
+      res.writeHead(200, {
+        'Content-Type': 'text/html; charset=utf-8',
+        'Reporting-Endpoints': `default="${sink}/reports"`,
+        'Content-Security-Policy-Report-Only': "img-src 'none'; report-to default",
+        'Cache-Control': 'no-store',
+      });
+      res.end('<!doctype html><title>reporting</title><p>reporting</p>');
+      return;
+    }
     const path = normalize(decodeURIComponent((req.url ?? '/').split('?')[0])).replace(/^(\.\.[/\\])+/, '');
     const file = join(ROOT, path === '/' ? 'index.html' : path);
     if (!file.startsWith(ROOT)) { res.writeHead(403); res.end(); return; }
