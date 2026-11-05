@@ -27,10 +27,16 @@ test('ON: data: and blob: URLs keep working and are not recorded', async ({ ext,
 test('ON: forged hook record with invalid method is rejected', async ({ ext, openApp, page }) => {
   await openApp();
   await page.evaluate(() => {
-    const rec = { hookId: 'x-1', url: 'https://example.test/', method: 'X;touch /tmp/p', headers: [], body: null,
-      kind: 'fetch', held: false, frameUrl: location.href, stack: '', timestamp: new Date().toISOString() };
-    window.dispatchEvent(new CustomEvent('__ni_to_bridge', { detail: JSON.stringify({ type: 'hookRecord', record: rec }) }));
+    const send = (hookId: string, url: string, method: string) => {
+      const rec = { hookId, url, method, headers: [], body: null,
+        kind: 'fetch', held: false, frameUrl: location.href, stack: '', timestamp: new Date().toISOString() };
+      window.dispatchEvent(new CustomEvent('__ni_to_bridge', { detail: JSON.stringify({ type: 'hookRecord', record: rec }) }));
+    };
+    send('x-1', 'https://example.test/bad', 'X;touch /tmp/p');
+    send('x-2', 'https://example.test/good', 'POST'); // controle positivo: o canal entrega registros válidos
   });
-  await page.waitForTimeout(500);
-  expect(await ext.send({ type: 'getRecords' })).toEqual([]);
+  await expect.poll(async () => ((await ext.send({ type: 'getRecords' })) as Array<{ url: string }>).map((r) => r.url))
+    .toEqual(['https://example.test/good']);
+  await page.waitForTimeout(300);
+  expect(((await ext.send({ type: 'getRecords' })) as Array<{ url: string }>).map((r) => r.url)).toEqual(['https://example.test/good']);
 });

@@ -255,3 +255,25 @@ test('blocked async XHR follows native event sequence', async ({ ext, openApp, p
   });
   expect(sink.connections).toBe(0);
 });
+
+test('records emitted before the bridge exists are queued and delivered once it starts', async ({ ext, openApp, page, sink }) => {
+  await openApp();
+  await ext.send({ type: 'setEnabled', enabled: true });
+  // Novos documentos recebem estado + hooks, mas ainda não a ponte.
+  await ext.eval(() => chrome.scripting.unregisterContentScripts({ ids: ['ni-bridge'] }), null);
+  const r = await page.evaluate((s) => {
+    const f = document.createElement('iframe');
+    f.srcdoc = `<script>window.__q = fetch(${JSON.stringify(s + '/queued')}, {method:'POST', body:'q'}).then(() => 'resolved', (e) => e.name);</script>`;
+    document.body.appendChild(f);
+    return new Promise((res) => f.addEventListener('load', async () => res(await (f.contentWindow as any).__q)));
+  }, sink.origin);
+  expect(r).toBe('TypeError');
+  await page.waitForTimeout(500);
+  const before: InterceptedRequest[] = await ext.send({ type: 'getRecords' });
+  expect(before.some((x) => x.url.endsWith('/queued'))).toBe(false); // sem ponte: nada chegou
+
+  const tabId: number = await ext.eval(async () => (await chrome.tabs.query({ url: 'http://127.0.0.1/*' }))[0].id!, null);
+  await ext.eval((t) => chrome.scripting.executeScript({ target: { tabId: t, allFrames: true }, files: ['bridge.js'] }), tabId);
+  await expect.poll(async () => ((await ext.send({ type: 'getRecords' })) as InterceptedRequest[]).some((x) => x.url.endsWith('/queued'))).toBe(true);
+  expect(sink.connections).toBe(0);
+});

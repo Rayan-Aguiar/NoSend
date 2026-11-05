@@ -150,7 +150,8 @@ test('release button', async ({ context, ext, openApp, page, sink }) => {
   await viewer.locator('#ni-detail .ni-release').click();
   await expect(row).toContainText('RELEASED');
   await expect.poll(() => page.evaluate(() => (window as any).__r)).toBe('resolved:200');
-  await expect(viewer.locator('#ni-detail')).toContainText('200');
+  const resultRow = viewer.locator('#ni-detail tr').filter({ has: viewer.locator('th', { hasText: 'Resultado da liberação' }) });
+  await expect(resultRow.locator('td')).toHaveText('ok — HTTP 200');
   await expect(viewer.locator('#ni-detail .ni-release')).toHaveCount(0);
 });
 
