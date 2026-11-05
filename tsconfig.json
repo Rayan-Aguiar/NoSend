@@ -14,5 +14,5 @@
     "noUncheckedIndexedAccess": false,
     "allowJs": false
   },
-  "include": ["src", "test", "*.ts"]
+  "include": ["src", "test", "scripts", "*.ts"]
 }
