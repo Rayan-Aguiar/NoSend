@@ -155,7 +155,7 @@ function recordFromHook(r: HookRecord, sender?: chrome.runtime.MessageSender): I
       stack: typeof r.stack === 'string' ? r.stack : undefined,
     },
     notes: [BROWSER_HEADERS_NOTE, ...(Array.isArray(r.notes) ? r.notes.map(String) : [])],
-    incognito: sender?.tab?.incognito ?? false,
+    incognito: sender?.tab?.incognito ?? true, // sem aba conhecida: só memória
     hookId: r.hookId,
   });
 }

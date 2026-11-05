@@ -1,3 +1,4 @@
+import { isIncognitoTab } from './incognito';
 // Captura de fallback (spec §3.1): registra o que o DNR bloqueou e os hooks não viram
 // (navegações, <form>, <img>, CSS, workers, service workers). Só URL, método, tipo e origem.
 import type { RequestKind, RequestOrigin } from '../shared/types';
@@ -53,14 +54,7 @@ function parseQuery(url: string): Array<[string, string]> {
   }
 }
 
-async function isIncognito(tabId: number): Promise<boolean> {
-  if (tabId < 0) return false;
-  try {
-    return (await chrome.tabs.get(tabId)).incognito === true;
-  } catch {
-    return false;
-  }
-}
+const isIncognito = isIncognitoTab;
 
 /** URL do documento que fez a requisição (para navegação de iframe: o documento pai). */
 async function documentUrlFor(req: DnrRequest): Promise<string | undefined> {
