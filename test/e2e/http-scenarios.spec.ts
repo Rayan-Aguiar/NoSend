@@ -36,6 +36,8 @@ test.describe('interceptor ON', () => {
     const recs: InterceptedRequest[] = await ext.send({ type: 'getRecords' });
     const by = (path: string, method?: string) =>
       recs.find((r) => new URL(r.url).pathname === path && (!method || r.method === method))!;
+    const fromDnr = recs.filter((r) => r.source !== 'hook');
+    expect(fromDnr.map((r) => `${r.kind} ${r.method} ${r.url} tab=${r.origin.tabId} init=${r.origin.initiator}`)).toEqual([]);
     for (const r of recs) {
       expect(r.source).toBe('hook');
       expect(r.status).toBe('BLOCKED');
