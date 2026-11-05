@@ -97,7 +97,7 @@ Popup, visualizador e painel se atualizam ao vivo (port com o service worker; ve
 
 Filtros da lista: **Filtrar URL** (texto), **Método**, **Tipo**, **Status** e, no painel, **só esta aba**; um contador mostra "N de M" quando há filtro. Na lista (mais recentes primeiro): Método, URL, Horário, Tipo, Content-Type, Status. No detalhe: General, Request Headers, Query Parameters, Request Payload (interpretado, com o botão "ver original"/"ver interpretado"), Origem (aba, frame, initiator, stack), Notas. Ações: **Copiar cURL**; e **Liberar** / **Descartar** só em registros `HELD` capturados na página. Quando a URL é longa demais para uma regra de exceção exata, **Liberar** fica desabilitado com a dica "URL longa demais para uma exceção DNR exata" (habilitado, a dica é "Envia esta requisição uma vez").
 
-O cURL gerado é seguro para colar no shell: método citado quando não é um token HTTP válido (RFC 9110), comentários sem quebras de linha, e campos de formulário com `;`, `@` ou `<` usam `--form-string` (curl não lê arquivos nem interpreta `;type=`).
+O cURL gerado é seguro para colar no shell: método citado quando não é um token HTTP válido (RFC 9110), comentários sem quebras de linha, e campos de formulário com `;`, `@` ou `<` usam `--form-string` (curl não lê arquivos nem interpreta `;type=`). Campos de arquivo nunca usam o nome vindo da página: saem como `-F 'campo=@ARQUIVO_AQUI'` com um comentário `# arquivo "nome" (tipo, N bytes)`; substitua pelo caminho antes de rodar.
 
 Registros capturados só pela camada de rede (navegação, `<form>`, `<img>`, CSS, workers) não têm headers nem body — apenas URL, método, tipo e origem.
 

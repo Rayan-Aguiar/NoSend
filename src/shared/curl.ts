@@ -30,7 +30,9 @@ export function toCurl(r: InterceptedRequest): string {
             const flag = /[@<;]/.test(`${f.name}=${f.value}`) ? '--form-string' : '-F';
             parts.push(`${flag} ${q(`${f.name}=${f.value}`)}`);
           } else {
-            parts.push(`-F ${q(`${f.name}=@${f.file.name}`)}`);
+            // Nunca @<nome vindo da página>: o curl leria e enviaria um arquivo local.
+            comments.push(`# arquivo ${c(JSON.stringify(f.file.name))} (${c(f.file.type || 'tipo desconhecido')}, ${c(f.file.size)} bytes): substitua ARQUIVO_AQUI pelo caminho`);
+            parts.push(`-F ${q(`${f.name}=@ARQUIVO_AQUI`)}`);
           }
         }
         break;

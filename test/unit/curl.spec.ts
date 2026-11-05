@@ -43,7 +43,20 @@ test('formdata -> -F fields', () => {
     },
   }));
   expect(c).toContain("-F 'name=Rayan'");
-  expect(c).toContain("-F 'file=@x.txt'");
+  // Nunca @<nome da página>: o curl leria/enviaria um arquivo local do usuário.
+  expect(c).not.toContain('@x.txt');
+  expect(c).toContain("-F 'file=@ARQUIVO_AQUI'");
+  expect(c).toMatch(/^# arquivo "x\.txt" \(text\/plain, 3 bytes\)/m);
+});
+
+test('file field name cannot inject a path or a newline', () => {
+  const c = toCurl(req({
+    method: 'POST',
+    body: { type: 'formdata', fields: [{ name: 'f', file: { name: '../.netrc\nrm -rf ~', type: 'x', size: 1 } }] },
+  }));
+  expect(c).not.toContain('.netrc\n');
+  expect(c).not.toMatch(/@\.\.\/\.netrc/);
+  expect(c).toContain("-F 'f=@ARQUIVO_AQUI'");
 });
 
 test('binary -> omitted comment', () => {
