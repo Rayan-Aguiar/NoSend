@@ -67,6 +67,8 @@ export const test = base.extend<Fixtures, { app: AppServer }>({
 
   ext: async ({ sw }, use) => {
     const id = new URL(sw.url()).host;
+    // Espera a inicialização do background (histórico, regras, content scripts registrados).
+    await sw.evaluate(() => (globalThis as any).niDebug.handle({ type: 'getState' }));
     await use({
       id,
       send: (req) => sw.evaluate((r) => (globalThis as any).niDebug.handle(r), req),
@@ -85,7 +87,7 @@ export const test = base.extend<Fixtures, { app: AppServer }>({
     await use(page);
   },
 
-  openApp: async ({ page, app, sink }, use) => {
+  openApp: async ({ page, app, sink, ext: _ready }, use) => {
     await use(async (path = 'index.html') => {
       await page.goto(`${app.origin}/${path}?sink=${encodeURIComponent(sink.origin)}`);
       return page;

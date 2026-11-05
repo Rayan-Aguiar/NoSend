@@ -9,6 +9,7 @@ import {
   addRecord, clearRecords, flushHistory, getRecords, loadHistory, onHistoryChange, setHistoryLimit,
 } from './history';
 import { startDnrLog } from './dnrlog';
+import { broadcastState, injectIntoOpenTabs, syncContentScripts } from './injection';
 
 let status: StatusResult = { status: 'OFF', reasons: [], warnings: [] };
 /** Erros da última ativação; somados aos motivos da verificação até o próximo toggle. */
@@ -62,7 +63,18 @@ async function refreshStatus(): Promise<void> {
   await setStatus(await computeStatus(enabled, enabled ? activationErrors : []));
 }
 
+/** Propaga o estado para as páginas: scripts registrados, frames com ponte e abas abertas. */
+async function applyPageState(): Promise<void> {
+  const s = await getSettings();
+  const page = { enabled: s.enabled, mode: s.mode };
+  try { await syncContentScripts(page); } catch (e) { console.warn('syncContentScripts', e); }
+  await broadcastState(page).catch(() => {});
+  await injectIntoOpenTabs(page).catch(() => {});
+}
+
 // ---- ligar / desligar ----
+// Ordem ao ligar: DNR -> privacy -> páginas. Ao desligar: DNR -> privacy -> páginas.
+// Em ambos os sentidos, a janela intermediária erra para o lado do bloqueio.
 async function enable(): Promise<void> {
   await saveSettings({ enabled: true }); // salvo antes: se algo cair no meio, o restart reaplica
   activationErrors = [];
@@ -70,6 +82,7 @@ async function enable(): Promise<void> {
   try { await installBlockRule(); } catch (e) { activationErrors.push(`instalação da regra DNR falhou: ${(e as Error).message}`); }
   try { await disablePrediction(); } catch (e) { activationErrors.push(`desligar predição de rede falhou: ${(e as Error).message}`); }
   await refreshStatus();
+  await applyPageState();
 }
 
 async function disable(): Promise<void> {
@@ -78,6 +91,7 @@ async function disable(): Promise<void> {
   await restorePrediction().catch(() => {});
   await saveSettings({ enabled: false });
   await setStatus(await computeStatus(false));
+  await applyPageState();
 }
 
 // ---- inicialização (todo wake-up do service worker) ----
@@ -91,10 +105,13 @@ const ready: Promise<void> = (async () => {
     try { await disablePrediction(); } catch (e) { activationErrors.push(`desligar predição de rede falhou: ${(e as Error).message}`); }
   }
   await refreshStatus();
+  try {
+    await syncContentScripts({ enabled: settings.enabled, mode: settings.mode });
+  } catch (e) { console.warn('syncContentScripts', e); }
 })();
 
 // ---- roteamento ----
-export async function handle(req: BgRequest, _sender?: chrome.runtime.MessageSender): Promise<unknown> {
+export async function handle(req: BgRequest, sender?: chrome.runtime.MessageSender): Promise<unknown> {
   await ready;
   switch (req.type) {
     case 'getState':
@@ -102,7 +119,11 @@ export async function handle(req: BgRequest, _sender?: chrome.runtime.MessageSen
     case 'setEnabled':
       return serial(async () => { await (req.enabled ? enable() : disable()); return snapshot(); });
     case 'setMode':
-      return serial(async () => { await saveSettings({ mode: req.mode === 'hold' ? 'hold' : 'fail' }); return snapshot(); });
+      return serial(async () => {
+        await saveSettings({ mode: req.mode === 'hold' ? 'hold' : 'fail' });
+        await applyPageState();
+        return snapshot();
+      });
     case 'setLimit':
       return serial(async () => {
         const limit = clampLimit(req.limit);
@@ -115,6 +136,9 @@ export async function handle(req: BgRequest, _sender?: chrome.runtime.MessageSen
     case 'clear':
       await clearRecords();
       return { ok: true };
+    case 'hookHeartbeat':
+      if (sender?.tab?.id !== undefined) hookedTabs.add(sender.tab.id);
+      return { ok: true };
     default:
       return { error: `mensagem não suportada: ${(req as { type: string }).type}` };
   }
@@ -125,6 +149,13 @@ chrome.runtime.onMessage.addListener((msg: BgRequest, sender, sendResponse) => {
   return true;
 });
 startDnrLog(ready);
+
+chrome.tabs.onRemoved.addListener((tabId) => { hookedTabs.delete(tabId); });
+chrome.runtime.onInstalled.addListener(async () => {
+  await ready;
+  const s = await getSettings();
+  await injectIntoOpenTabs({ enabled: s.enabled, mode: s.mode }).catch(() => {});
+});
 
 onHistoryChange(() => { /* UI ao vivo: Task 9 */ });
 
