@@ -241,6 +241,9 @@ chrome.webNavigation.onCommitted.addListener((d) => {
     }
   });
 });
+// Acorda o service worker na abertura do navegador: `ready` reinstala/verifica a regra e
+// atualiza ícone/badge (sem isso ficam no padrão OFF do manifest até outro evento).
+chrome.runtime.onStartup.addListener(() => { void ready; });
 chrome.runtime.onInstalled.addListener(async () => {
   await ready;
   const s = await getSettings();
