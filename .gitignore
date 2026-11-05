@@ -16,3 +16,4 @@ playwright-report
 .zprofile
 .zshrc
 .claude
+dist-test-*
