@@ -1,7 +1,7 @@
 // Hook de fetch (spec §3.4). Com ON a URL original nunca chega ao fetch nativo
 // (exceto em Liberar, Task 8).
 import type { HookCtx } from './ctx';
-import { disguise, emitRecord, headersToList, readRequestBody, resolveUrl } from './common';
+import { disguise, emitRecord, headersToList, isLocalUrl, readRequestBody, resolveUrl } from './common';
 
 export function networkError(): TypeError {
   return new TypeError('Failed to fetch');
@@ -13,12 +13,15 @@ export function installFetchHook(ctx: HookCtx): void {
   const hooked = function fetch(this: unknown, input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     const state = ctx.getState();
     // eslint-disable-next-line prefer-rest-params
-    if (!state.enabled) return nativeFetch.apply(this as any, arguments as any);
+    const isReq = typeof Request !== 'undefined' && input instanceof Request;
+    if (!state.enabled || isLocalUrl(resolveUrl(isReq ? (input as Request).url : input))) {
+      // eslint-disable-next-line prefer-rest-params
+      return nativeFetch.apply(this as any, arguments as any);
+    }
 
     const hookId = ctx.newId();
     const stack = ctx.captureStack();
     const held = state.mode === 'hold';
-    const isReq = typeof Request !== 'undefined' && input instanceof Request;
 
     const recorded = (async () => {
       const url = resolveUrl(isReq ? (input as Request).url : input);

@@ -28,6 +28,11 @@ export function disguise<T extends Function>(fake: T, real: Function): T {
 }
 
 // ---- normalização ----
+/** Esquemas que nunca geram tráfego de rede: passam direto para a API nativa. */
+export function isLocalUrl(url: string): boolean {
+  return /^(data|blob|about|chrome-extension|javascript):/i.test(url);
+}
+
 export function resolveUrl(u: unknown): string {
   try { return new URL(String(u), document.baseURI).href; } catch { return String(u); }
 }

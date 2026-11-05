@@ -1,6 +1,6 @@
 // Hook de XMLHttpRequest (spec §3.4).
 import type { HookCtx } from './ctx';
-import { disguise, emitRecord, resolveUrl } from './common';
+import { disguise, emitRecord, isLocalUrl, resolveUrl } from './common';
 
 interface XhrMeta { method: string; url: string; async: boolean; headers: Array<[string, string]> }
 
@@ -45,7 +45,7 @@ export function installXhrHook(ctx: HookCtx): void {
     const state = ctx.getState();
     const m = meta.get(this);
     // eslint-disable-next-line prefer-rest-params
-    if (!state.enabled || !m) return nSend.apply(this, arguments as any);
+    if (!state.enabled || !m || isLocalUrl(m.url)) return nSend.apply(this, arguments as any);
 
     const hookId = ctx.newId();
     const held = state.mode === 'hold' && m.async;

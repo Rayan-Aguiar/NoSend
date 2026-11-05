@@ -54,3 +54,20 @@ test('binary -> omitted comment', () => {
   expect(c).toContain('# body binário (3 bytes) omitido');
   expect(c).not.toContain('--data');
 });
+
+test('shell injection: method, comment text and form values are neutralized', () => {
+  const evil = toCurl(req({
+    method: 'X;touch /tmp/pwned',
+    body: { type: 'unavailable', reason: 'x\ntouch /tmp/pwned2' },
+  }));
+  expect(evil).toContain(`-X 'X;touch /tmp/pwned'`);
+  // Nenhuma linha fora de comentário/continuação começa com um comando injetado.
+  for (const line of evil.split('\n')) {
+    expect(line.startsWith('#') || line.startsWith('curl ') || line.startsWith('  ')).toBe(true);
+  }
+  const fd = toCurl(req({
+    method: 'POST',
+    body: { type: 'formdata', fields: [{ name: 'a', value: 'x;type=text/html' }] },
+  }));
+  expect(fd).toContain(`--form-string 'a=x;type=text/html'`);
+});

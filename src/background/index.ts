@@ -127,6 +127,7 @@ const HOOK_KINDS: RequestKind[] = ['fetch', 'xhr', 'beacon', 'websocket', 'webso
 /** A página pode forjar eventos: valida o formato antes de gravar. */
 function validHookRecord(r: any): r is HookRecord {
   return !!r && typeof r.url === 'string' && typeof r.method === 'string' && typeof r.hookId === 'string'
+    && /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(r.method)
     && Array.isArray(r.headers) && HOOK_KINDS.includes(r.kind);
 }
 
