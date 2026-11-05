@@ -16,6 +16,10 @@ let status: StatusResult = { status: 'OFF', reasons: [], warnings: [] };
 /** Erros da última ativação; somados aos motivos da verificação até o próximo toggle. */
 let activationErrors: string[] = [];
 const hookedTabs = new Set<number>();
+/** Sobrevive a reinícios do service worker (storage.session vive enquanto o navegador estiver aberto). */
+async function persistHookedTabs(): Promise<void> {
+  await chrome.storage.session.set({ ni_hooked_tabs: [...hookedTabs] }).catch(() => {});
+}
 /** Ports de UI conectados (popup, painel, visualizador). */
 const uiPorts = new Set<chrome.runtime.Port>();
 let uiTimer: ReturnType<typeof setTimeout> | null = null;
@@ -90,8 +94,8 @@ async function enable(): Promise<void> {
   await setStatus({ status: 'ACTIVATING', reasons: [], warnings: status.warnings });
   try { await installBlockRule(); } catch (e) { activationErrors.push(`instalação da regra DNR falhou: ${(e as Error).message}`); }
   try { await disablePrediction(); } catch (e) { activationErrors.push(`desligar predição de rede falhou: ${(e as Error).message}`); }
+  await applyPageState(); // spec §3.7: status final só depois de atualizar as páginas
   await refreshStatus();
-  await applyPageState();
 }
 
 async function disable(): Promise<void> {
@@ -106,6 +110,8 @@ async function disable(): Promise<void> {
 // ---- inicialização (todo wake-up do service worker) ----
 const ready: Promise<void> = (async () => {
   const settings = await getSettings();
+  const { ni_hooked_tabs } = await chrome.storage.session.get('ni_hooked_tabs').catch(() => ({ ni_hooked_tabs: [] }));
+  for (const id of (ni_hooked_tabs as number[] | undefined) ?? []) hookedTabs.add(id);
   await loadHistory(settings.limit);
   await removeAllAllowRules().catch(() => {});
   if (settings.enabled) {
@@ -197,7 +203,10 @@ export async function handle(req: BgRequest, sender?: chrome.runtime.MessageSend
     case 'discard':
       return discardRecord(req.id);
     case 'hookHeartbeat':
-      if (sender?.tab?.id !== undefined) hookedTabs.add(sender.tab.id);
+      if (sender?.tab?.id !== undefined && !hookedTabs.has(sender.tab.id)) {
+        hookedTabs.add(sender.tab.id);
+        await persistHookedTabs();
+      }
       return { ok: true };
     default:
       return { error: `mensagem não suportada: ${(req as { type: string }).type}` };
@@ -211,7 +220,7 @@ chrome.runtime.onMessage.addListener((msg: BgRequest, sender, sendResponse) => {
 startDnrLog(ready);
 startReleaseTracking();
 
-chrome.tabs.onRemoved.addListener((tabId) => { hookedTabs.delete(tabId); });
+chrome.tabs.onRemoved.addListener((tabId) => { hookedTabs.delete(tabId); void persistHookedTabs(); });
 chrome.runtime.onInstalled.addListener(async () => {
   await ready;
   const s = await getSettings();

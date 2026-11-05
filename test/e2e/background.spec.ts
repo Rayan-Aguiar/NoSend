@@ -134,3 +134,20 @@ test('clear empties memory and storage', async ({ ext }) => {
   expect(stored.ni_history ?? []).toEqual([]);
   expect((await ext.send({ type: 'getState' })).count).toBe(0);
 });
+
+test('enabled status lists the permanent gaps', async ({ ext }) => {
+  const st: ExtState = await ext.send({ type: 'setEnabled', enabled: true });
+  const w = st.warnings.join('\n');
+  expect(w).toMatch(/WebRTC/);
+  expect(w).toMatch(/abertas antes de ligar/);
+  expect(w).toMatch(/workers/i);
+  const off: ExtState = await ext.send({ type: 'setEnabled', enabled: false });
+  expect(off.warnings.join('\n')).not.toMatch(/WebRTC/);
+});
+
+test('hooked tabs survive background memory loss (session storage)', async ({ ext, openApp }) => {
+  await openApp();
+  await expect.poll(async () => ((await ext.send({ type: 'getState' })) as ExtState).hookedTabs.length).toBeGreaterThan(0);
+  const stored = await ext.eval(() => chrome.storage.session.get('ni_hooked_tabs'), null);
+  expect((stored.ni_hooked_tabs as number[]).length).toBeGreaterThan(0);
+});
