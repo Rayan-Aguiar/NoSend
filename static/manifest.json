@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Network Interceptor",
+  "version": "0.1.0",
+  "description": "Bloqueia requisições de rede das páginas e registra localmente o que seria enviado.",
+  "minimum_chrome_version": "121",
+  "permissions": [
+    "declarativeNetRequest",
+    "declarativeNetRequestFeedback",
+    "storage",
+    "privacy",
+    "scripting",
+    "tabs",
+    "webNavigation"
+  ],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js", "type": "module" },
+  "incognito": "spanning"
+}
