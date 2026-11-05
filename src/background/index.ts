@@ -8,6 +8,7 @@ import { clampLimit, getSettings, saveSettings } from './state';
 import {
   addRecord, clearRecords, flushHistory, getRecords, loadHistory, onHistoryChange, setHistoryLimit,
 } from './history';
+import { startDnrLog } from './dnrlog';
 
 let status: StatusResult = { status: 'OFF', reasons: [], warnings: [] };
 /** Erros da última ativação; somados aos motivos da verificação até o próximo toggle. */
@@ -123,6 +124,7 @@ chrome.runtime.onMessage.addListener((msg: BgRequest, sender, sendResponse) => {
   handle(msg, sender).then(sendResponse, (e) => sendResponse({ error: (e as Error).message }));
   return true;
 });
+startDnrLog(ready);
 
 onHistoryChange(() => { /* UI ao vivo: Task 9 */ });
 
