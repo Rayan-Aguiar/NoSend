@@ -20,8 +20,65 @@ function delay(ms) { return new Promise((r) => setTimeout(r, ms)); }
 // porque com ON o próprio worker.js (origem da app) também é bloqueado.
 let workerUrl = null;
 
+function xhrOutcome(method, path, body, headers = {}) {
+  return new Promise((resolve) => {
+    const x = new XMLHttpRequest();
+    const events = [];
+    x.onreadystatechange = () => { if (x.readyState === 4) events.push('readystatechange:4'); };
+    x.onload = () => events.push('load');
+    x.onerror = () => events.push('error');
+    x.onloadend = () => { events.push('loadend'); resolve({ kind: 'events', events, status: x.status }); };
+    x.open(method, SINK + path);
+    for (const [k, v] of Object.entries(headers)) x.setRequestHeader(k, v);
+    x.send(body);
+  });
+}
+
 window.scenarios = {
   fetchGet: () => outcome(fetch(SINK + '/users?page=2&q=a%20b')),
+
+  // ---- Task 6: fetch / XHR / sendBeacon ----
+  getQuery: () => outcome(fetch(SINK + '/users?page=2&q=a%20b')),
+  postJson: () => outcome(fetch(SINK + '/users', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Rayan', email: 'rayan@example.com' }),
+  })),
+  putJson: () => outcome(fetch(SINK + '/users/1', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name: 'Rayan Updated' }),
+  })),
+  deleteReq: () => outcome(fetch(SINK + '/users/1', { method: 'DELETE' })),
+  postFormData: () => {
+    const fd = new FormData();
+    fd.append('name', 'Rayan');
+    fd.append('file', new File(['abc'], 'x.txt', { type: 'text/plain' }));
+    return outcome(fetch(SINK + '/upload', { method: 'POST', body: fd }));
+  },
+  customHeaders: () => outcome(fetch(SINK + '/custom', { headers: { 'X-Custom': '1' } })),
+  authorization: () => outcome(fetch(SINK + '/secure', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer example-token', 'Content-Type': 'application/json' },
+    body: '{"x":1}',
+  })),
+  fetchRequestObject: () => outcome(fetch(new Request(SINK + '/request-object', {
+    method: 'POST', body: '{"r":1}', headers: { 'Content-Type': 'application/json' },
+  }))),
+  xhrPost: () => xhrOutcome('POST', '/xhr', JSON.stringify({ via: 'xhr' }), {
+    'Content-Type': 'application/json', 'X-Requested-With': 'XMLHttpRequest',
+  }),
+  xhrSync: () => {
+    try {
+      const x = new XMLHttpRequest();
+      x.open('GET', SINK + '/xhr-sync', false);
+      x.send();
+      return { kind: 'resolved', status: x.status };
+    } catch (e) {
+      return { kind: 'rejected', name: e.name, message: e.message };
+    }
+  },
+  beacon: () => ({ kind: 'returned', value: navigator.sendBeacon(SINK + '/beacon', 'beacon-data') }),
 
   // ---- Task 4: requisições que só o DNR vê ----
   formSubmit: async () => {

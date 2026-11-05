@@ -5,7 +5,7 @@ import { build } from 'esbuild';
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 
 const isTest = process.argv.includes('--test');
-const out = isTest ? 'dist-test' : 'dist';
+const out = process.env.NI_OUT || (isTest ? 'dist-test' : 'dist');
 
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });

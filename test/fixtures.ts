@@ -7,7 +7,7 @@ import { startSink, type Sink } from './servers/sink.ts';
 import { startApp, type AppServer } from './servers/app.ts';
 import type { BgRequest } from '../src/shared/messages.ts';
 
-export const EXT_DIR = resolve('dist-test');
+export const EXT_DIR = resolve(process.env.NI_OUT || 'dist-test');
 export const CHROME_PATH =
   process.env.CHROME_PATH ??
   join(process.env.HOME ?? '', '.cache/ms-playwright/chromium-1247/chrome-linux64/chrome');

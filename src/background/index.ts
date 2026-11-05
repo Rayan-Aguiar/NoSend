@@ -1,6 +1,6 @@
 // Background service worker: estado, status fail-safe, histórico e roteamento de mensagens.
 import type { BgRequest } from '../shared/messages';
-import type { ExtState, InterceptedRequest } from '../shared/types';
+import type { ExtState, HookRecord, InterceptedRequest, RequestKind } from '../shared/types';
 import { installBlockRule, removeBlockRule, removeAllAllowRules } from './dnr';
 import { disablePrediction, restorePrediction } from './privacy';
 import { computeStatus, type StatusResult } from './status';
@@ -110,6 +110,46 @@ const ready: Promise<void> = (async () => {
   } catch (e) { console.warn('syncContentScripts', e); }
 })();
 
+// ---- registros vindos dos hooks ----
+const BROWSER_HEADERS_NOTE =
+  'Headers adicionados pelo navegador (Cookie, User-Agent, Origin, Sec-*) não incluídos: a requisição nunca foi enviada.';
+const HOOK_KINDS: RequestKind[] = ['fetch', 'xhr', 'beacon', 'websocket', 'websocket-message', 'eventsource'];
+
+/** A página pode forjar eventos: valida o formato antes de gravar. */
+function validHookRecord(r: any): r is HookRecord {
+  return !!r && typeof r.url === 'string' && typeof r.method === 'string' && typeof r.hookId === 'string'
+    && Array.isArray(r.headers) && HOOK_KINDS.includes(r.kind);
+}
+
+function recordFromHook(r: HookRecord, sender?: chrome.runtime.MessageSender): InterceptedRequest {
+  let query: Array<[string, string]> = [];
+  try { query = [...new URL(r.url).searchParams]; } catch { /* URL inválida */ }
+  const headers = r.headers.filter((h) => Array.isArray(h) && h.length === 2).map(([k, v]) => [String(k), String(v)] as [string, string]);
+  const contentType = headers.find(([k]) => k.toLowerCase() === 'content-type')?.[1] ?? null;
+  return addRecord({
+    timestamp: typeof r.timestamp === 'string' ? r.timestamp : new Date().toISOString(),
+    url: r.url,
+    method: r.method.toUpperCase(),
+    query,
+    headers,
+    contentType,
+    body: r.body ?? null,
+    kind: r.kind,
+    source: 'hook',
+    status: r.held ? 'HELD' : 'BLOCKED',
+    origin: {
+      tabId: sender?.tab?.id ?? -1,
+      frameId: sender?.frameId,
+      frameUrl: typeof r.frameUrl === 'string' ? r.frameUrl : undefined,
+      documentUrl: sender?.url,
+      stack: typeof r.stack === 'string' ? r.stack : undefined,
+    },
+    notes: [BROWSER_HEADERS_NOTE, ...(Array.isArray(r.notes) ? r.notes.map(String) : [])],
+    incognito: sender?.tab?.incognito ?? false,
+    hookId: r.hookId,
+  });
+}
+
 // ---- roteamento ----
 export async function handle(req: BgRequest, sender?: chrome.runtime.MessageSender): Promise<unknown> {
   await ready;
@@ -136,6 +176,9 @@ export async function handle(req: BgRequest, sender?: chrome.runtime.MessageSend
     case 'clear':
       await clearRecords();
       return { ok: true };
+    case 'hookRecord':
+      if (!validHookRecord(req.record)) return { error: 'registro inválido' };
+      return { id: recordFromHook(req.record, sender).id };
     case 'hookHeartbeat':
       if (sender?.tab?.id !== undefined) hookedTabs.add(sender.tab.id);
       return { ok: true };

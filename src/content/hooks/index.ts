@@ -1,6 +1,9 @@
 // Hooks do MAIN world: instalação idempotente, estado síncrono e canal com a ponte.
 import { EV_TO_BRIDGE, EV_TO_PAGE, type BridgeToPage, type PageToBridge } from '../../shared/messages';
 import type { HookCtx, PageState } from './ctx';
+import { installFetchHook } from './fetch';
+import { installXhrHook } from './xhr';
+import { installBeaconHook } from './beacon';
 
 const G = globalThis as any;
 const FAILSAFE: PageState = { enabled: true, mode: 'fail' };
@@ -83,7 +86,10 @@ function install(): void {
   post({ type: 'ping' }); // se a ponte já existe, ela responde bridgeReady
 }
 
-/** Hooks de rede são adicionados nas Tasks 6–8. */
-function installHooks(_ctx: HookCtx): void {}
+function installHooks(ctx: HookCtx): void {
+  for (const install of [installFetchHook, installXhrHook, installBeaconHook]) {
+    try { install(ctx); } catch { /* um hook com falha não impede os outros; o DNR continua bloqueando */ }
+  }
+}
 
 if (!G.__NI_INSTALLED__) install();
