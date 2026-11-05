@@ -195,3 +195,40 @@ test.describe('fetch record fidelity (what the browser would send)', () => {
     expect(sink.connections).toBe(0);
   });
 });
+
+test.describe('record metadata', () => {
+  test('stack keeps app frames from a file named hooks.js', async ({ ext, openApp, page, sink, app }) => {
+    await openApp();
+    await page.addScriptTag({ url: app.origin + '/hooks.js' });
+    await ext.send({ type: 'setEnabled', enabled: true });
+    await page.evaluate((s) => (window as any).appHooksFetch(s + '/stack'), sink.origin);
+    let rec: InterceptedRequest | undefined;
+    await expect.poll(async () => {
+      rec = ((await ext.send({ type: 'getRecords' })) as InterceptedRequest[]).find((x) => x.url.endsWith('/stack'));
+      return !!rec;
+    }).toBe(true);
+    expect(rec!.origin.stack).toContain('/hooks.js');
+    expect(rec!.origin.stack).not.toContain('chrome-extension://');
+  });
+
+  test('records keep call order and call time even when a body is slow to read', async ({ ext, openApp, page, sink }) => {
+    await openApp();
+    await ext.send({ type: 'setEnabled', enabled: true });
+    const calledAt = await page.evaluate((s) => {
+      const big = new Request(s + '/first', { method: 'POST', body: new Blob([new Uint8Array(8 * 1024 * 1024)]) });
+      const t = Date.now();
+      fetch(big).catch(() => {});
+      fetch(s + '/second').catch(() => {});
+      return t;
+    }, sink.origin);
+    let recs: InterceptedRequest[] = [];
+    await expect.poll(async () => {
+      recs = ((await ext.send({ type: 'getRecords' })) as InterceptedRequest[]).filter((x) => /\/(first|second)$/.test(x.url));
+      return recs.length;
+    }).toBe(2);
+    expect(recs.map((r) => new URL(r.url).pathname)).toEqual(['/first', '/second']);
+    expect(recs[0].seq).toBeLessThan(recs[1].seq);
+    expect(Date.parse(recs[0].timestamp) - calledAt).toBeLessThan(50);
+    expect(sink.connections).toBe(0);
+  });
+});

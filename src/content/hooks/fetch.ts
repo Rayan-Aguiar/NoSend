@@ -56,12 +56,9 @@ export function installFetchHook(ctx: HookCtx): void {
     const stack = ctx.captureStack();
     const held = state.mode === 'hold';
 
-    const recorded = (async () => {
-      const headers = sentHeaders(headersToList(init?.headers ?? (isReq ? (input as Request).headers : undefined)), probe.headers);
-      let body: unknown = init?.body ?? null;
-      if (init?.body === undefined && isReq) body = await readRequestBody(probe);
-      await emitRecord(ctx, { hookId, url: probe.url, method: probe.method, headers, body, kind: 'fetch', held, stack });
-    })().catch(() => {});
+    const headers = sentHeaders(headersToList(init?.headers ?? (isReq ? (input as Request).headers : undefined)), probe.headers);
+    const body: unknown = init?.body === undefined && isReq ? readRequestBody(probe) : init?.body ?? null;
+    const recorded = emitRecord(ctx, { hookId, url: probe.url, method: probe.method, headers, body, kind: 'fetch', held, stack });
 
     if (held) {
       return new Promise<Response>((resolve, reject) => {

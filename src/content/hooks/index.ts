@@ -53,7 +53,7 @@ function install(): void {
       return raw
         .split('\n')
         .slice(1)
-        .filter((l) => !/chrome-extension:\/\/|hooks\.js/.test(l))
+        .filter((l) => !/chrome-extension:\/\//.test(l))
         .join('\n')
         .trim();
     },

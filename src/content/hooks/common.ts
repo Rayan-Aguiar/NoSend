@@ -72,6 +72,7 @@ export interface RecordInput {
   url: string;
   method: string;
   headers: Array<[string, string]>;
+  /** Body ou promessa dele (ex.: leitura assíncrona de um Request). */
   body: unknown;
   kind: RequestKind;
   held: boolean;
@@ -79,27 +80,38 @@ export interface RecordInput {
   notes?: string[];
 }
 
-/** Serializa e envia o registro para a ponte. Nunca lança. */
-export async function emitRecord(ctx: HookCtx, input: RecordInput): Promise<void> {
-  let body: HookRecord['body'] = null;
-  try {
-    const ct = findHeader(input.headers, 'content-type') ?? implicitContentType(input.body);
-    body = await serializeBody(input.body as any, ct);
-  } catch (e) {
-    body = { type: 'unavailable', reason: `falha ao ler o body: ${(e as Error).message}` };
-  }
-  const record: HookRecord = {
-    hookId: input.hookId,
-    url: input.url,
-    method: input.method.toUpperCase(),
-    headers: input.headers,
-    body,
-    kind: input.kind,
-    held: input.held,
-    frameUrl: location.href,
-    stack: input.stack,
-    timestamp: new Date().toISOString(),
-    notes: input.notes,
-  };
-  ctx.emit({ type: 'hookRecord', record });
+/** Envios saem na ordem das chamadas da aplicação, mesmo que um body demore a ser lido. */
+let ordered: Promise<unknown> = Promise.resolve();
+
+/** Serializa e envia o registro para a ponte. Chamar de forma síncrona no hook: o horário
+ *  e a ordem são os da chamada da aplicação. Nunca rejeita. */
+export function emitRecord(ctx: HookCtx, input: RecordInput): Promise<void> {
+  const timestamp = new Date().toISOString();
+  const frameUrl = location.href;
+  const built = (async (): Promise<HookRecord> => {
+    let body: HookRecord['body'] = null;
+    try {
+      const raw = await input.body;
+      const ct = findHeader(input.headers, 'content-type') ?? implicitContentType(raw);
+      body = await serializeBody(raw as any, ct);
+    } catch (e) {
+      body = { type: 'unavailable', reason: `falha ao ler o body: ${(e as Error).message}` };
+    }
+    return {
+      hookId: input.hookId,
+      url: input.url,
+      method: input.method.toUpperCase(),
+      headers: input.headers,
+      body,
+      kind: input.kind,
+      held: input.held,
+      frameUrl,
+      stack: input.stack,
+      timestamp,
+      notes: input.notes,
+    };
+  })();
+  const sent = ordered.then(() => built).then((record) => { ctx.emit({ type: 'hookRecord', record }); }, () => {});
+  ordered = sent;
+  return sent;
 }
