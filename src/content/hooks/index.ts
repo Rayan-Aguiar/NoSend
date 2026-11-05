@@ -4,6 +4,8 @@ import type { HookCtx, PageState } from './ctx';
 import { installFetchHook } from './fetch';
 import { installXhrHook } from './xhr';
 import { installBeaconHook } from './beacon';
+import { installWebSocketHook } from './websocket';
+import { installEventSourceHook } from './eventsource';
 
 const G = globalThis as any;
 const FAILSAFE: PageState = { enabled: true, mode: 'fail' };
@@ -87,7 +89,7 @@ function install(): void {
 }
 
 function installHooks(ctx: HookCtx): void {
-  for (const install of [installFetchHook, installXhrHook, installBeaconHook]) {
+  for (const install of [installFetchHook, installXhrHook, installBeaconHook, installWebSocketHook, installEventSourceHook]) {
     try { install(ctx); } catch { /* um hook com falha não impede os outros; o DNR continua bloqueando */ }
   }
 }

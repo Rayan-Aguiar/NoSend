@@ -159,6 +159,50 @@ window.scenarios = {
   },
 };
 
+// ---- Task 7: WebSocket / EventSource ----
+const WS_URL = () => SINK.replace(/^http/, 'ws') + '/ws';
+
+Object.assign(window.scenarios, {
+  /** Tenta send antes de abrir (nativo lança InvalidStateError), envia "hi" no open. */
+  websocket: () => new Promise((resolve) => {
+    const events = [];
+    const ws = new WebSocket(WS_URL());
+    const done = () => { clearTimeout(t); resolve({ kind: 'events', events, url: ws.url }); };
+    const t = setTimeout(done, 1500);
+    try { ws.send('hi'); } catch (e) { events.push('send-error:' + e.name); }
+    ws.onopen = () => { events.push('open'); ws.send('hi'); };
+    ws.onmessage = (e) => { events.push('message:' + e.data); ws.close(); };
+    ws.onerror = () => events.push('error');
+    ws.onclose = () => { events.push('close'); done(); };
+  }),
+
+  eventSource: () => new Promise((resolve) => {
+    const events = [];
+    const es = new EventSource(SINK + '/sse');
+    const done = () => { clearTimeout(t); es.close(); resolve({ kind: 'events', events, url: es.url }); };
+    const t = setTimeout(done, 1500);
+    es.onopen = () => events.push('open');
+    es.onmessage = (e) => { events.push('message:' + e.data); done(); };
+    es.onerror = () => { events.push('error'); if (es.readyState === EventSource.CLOSED) done(); };
+  }),
+
+  /** Rodar com OFF: abre e guarda em window.__ws; o teste liga e chama sendAfterEnable. */
+  openWsThenEnable: () => new Promise((resolve) => {
+    const events = [];
+    const ws = new WebSocket(WS_URL());
+    window.__ws = ws;
+    const t = setTimeout(() => resolve({ kind: 'events', events }), 1500);
+    ws.onopen = () => { events.push('open'); clearTimeout(t); resolve({ kind: 'events', events }); };
+    ws.onerror = () => events.push('error');
+  }),
+
+  sendAfterEnable: async () => {
+    window.__ws.send('after');
+    await delay(500);
+    return { kind: 'returned', value: window.__ws.readyState };
+  },
+});
+
 // UI manual: um botão por cenário.
 document.getElementById('sink').textContent = SINK || '(defina ?sink=)';
 const buttons = document.getElementById('buttons');
