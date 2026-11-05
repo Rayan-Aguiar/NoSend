@@ -79,10 +79,17 @@ export async function verifyBlockRule(): Promise<string[]> {
 }
 
 /** Exceção estreita para Liberar (spec §3.2). Retorna o id da regra de sessão. */
+/** Métodos que o DNR conhece; qualquer outro (PROPFIND, REPORT…) só é casável como 'other'. */
+const DNR_METHODS = new Set(['connect', 'delete', 'get', 'head', 'options', 'patch', 'post', 'put']);
+export function dnrMethod(method: string): string {
+  const m = method.toLowerCase();
+  return DNR_METHODS.has(m) ? m : 'other';
+}
+
 export async function addAllowRule(tabId: number, url: string, method: string): Promise<number> {
   const existing = await chrome.declarativeNetRequest.getSessionRules();
   const id = Math.max(ALLOW_RULE_BASE_ID - 1, ...existing.map((r) => r.id)) + 1;
-  const methods = Array.from(new Set([method.toLowerCase(), 'options'])) as chrome.declarativeNetRequest.RequestMethod[];
+  const methods = Array.from(new Set([dnrMethod(method), 'options'])) as chrome.declarativeNetRequest.RequestMethod[];
   await chrome.declarativeNetRequest.updateSessionRules({
     addRules: [{
       id,

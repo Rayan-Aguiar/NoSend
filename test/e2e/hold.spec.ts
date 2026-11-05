@@ -220,3 +220,16 @@ test('HELD evicted by history limit is discarded (page gets network error)', asy
   expect((await ext.send({ type: 'getState' })).heldCount).toBe(0);
   expect(sink.connections).toBe(0);
 });
+
+test('release works for a non-standard method (PROPFIND)', async ({ ext, openApp, page, sink }) => {
+  await openApp();
+  await holdOn(ext);
+  await startFetch(page, 'a', sink.origin + '/dav', { method: 'PROPFIND' });
+  const rec = await recordFor(ext, '/dav', 'HELD');
+  expect(rec.method).toBe('PROPFIND');
+  expect(await ext.send({ type: 'release', id: rec.id })).toEqual({ ok: true });
+  await expect.poll(() => result(page, 'a')).toMatch(/^resolved:200/);
+  expect(nonPreflight(sink, '/dav').map((r) => r.method)).toEqual(['PROPFIND']);
+  // Exceção removida no primeiro uso (bem antes do timeout de 10 s).
+  await expect.poll(async () => (await ext.eval(() => chrome.declarativeNetRequest.getSessionRules(), null)).length, { timeout: 3000 }).toBe(0);
+});
