@@ -2,7 +2,7 @@
 //  - prod  -> dist/       (__TEST__ = false)
 //  - teste -> dist-test/  (__TEST__ = true, inclui test/ext-fixtures)
 import { build } from 'esbuild';
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 
 const isTest = process.argv.includes('--test');
 const out = process.env.NI_OUT || (isTest ? 'dist-test' : 'dist');
@@ -35,6 +35,7 @@ for (const [entry, file, format] of entries) {
     target: 'chrome120',
     define: { __TEST__: String(isTest) },
     legalComments: 'none',
+    minifySyntax: !isTest, // remove ramos if (false) do código de teste
     logLevel: 'warning',
   });
 }
@@ -51,6 +52,16 @@ for (const [file, state] of Object.entries(states)) {
     `(()=>{const s=${JSON.stringify(state)};globalThis.__NI_STATE__=s;` +
       `if(typeof globalThis.__NI_APPLY_STATE__==='function')globalThis.__NI_APPLY_STATE__(s);})();\n`,
   );
+}
+
+// Garantia: nenhum código exclusivo de teste no build de produção.
+if (!isTest) {
+  const markers = ['__test_force_dnr_failure', '__NI_DEBUG_GETSTATE__', 'reloadFromStorage'];
+  for (const f of readdirSync(out).filter((n) => n.endsWith('.js'))) {
+    const text = readFileSync(`${out}/${f}`, 'utf8');
+    const hit = markers.find((m) => text.includes(m));
+    if (hit) { console.error(`build de produção contém código de teste (${hit}) em ${f}`); process.exit(1); }
+  }
 }
 
 console.log(`build ok -> ${out}${isTest ? ' (test)' : ''}`);
