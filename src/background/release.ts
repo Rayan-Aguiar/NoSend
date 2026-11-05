@@ -102,4 +102,22 @@ export function startReleaseTracking(): void {
   chrome.webNavigation.onCommitted.addListener((d) => {
     markGone((r) => r.origin.tabId === d.tabId && (d.frameId === 0 || (r.origin.frameId ?? 0) === d.frameId));
   });
+  // Navegação bloqueada (ex.: clique em link com ON) troca o documento pela página de erro sem
+  // onCommitted. Uma navegação que falha também pode deixar o documento intacto (204, download),
+  // então pergunta a cada frame com HELD se ele ainda existe antes de marcar.
+  chrome.webNavigation.onErrorOccurred.addListener((d) => {
+    if (d.frameId === 0) void markGoneIfDead(d.tabId);
+  });
+}
+
+const alive = (tabId: number, frameId: number): Promise<boolean> =>
+  chrome.tabs.sendMessage(tabId, { type: 'alive' } satisfies TabMessage, { frameId }).then((r) => r === true, () => false);
+
+async function markGoneIfDead(tabId: number): Promise<void> {
+  const frames = new Set(getRecords(tabId).filter((r) => r.status === 'HELD').map((r) => r.origin.frameId ?? 0));
+  for (const frameId of frames) {
+    if (!(await alive(tabId, frameId))) {
+      markGone((r) => r.origin.tabId === tabId && (r.origin.frameId ?? 0) === frameId);
+    }
+  }
 }

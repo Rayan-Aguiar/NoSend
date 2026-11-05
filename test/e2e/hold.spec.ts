@@ -233,3 +233,17 @@ test('release works for a non-standard method (PROPFIND)', async ({ ext, openApp
   // Exceção removida no primeiro uso (bem antes do timeout de 10 s).
   await expect.poll(async () => (await ext.eval(() => chrome.declarativeNetRequest.getSessionRules(), null)).length, { timeout: 3000 }).toBe(0);
 });
+
+test('HELD becomes DISCARDED_PAGE_GONE when a blocked navigation replaces the page', async ({ ext, openApp, page, sink }) => {
+  await openApp();
+  await holdOn(ext);
+  await startFetch(page, 'a', sink.origin + '/users', JSON_INIT);
+  const rec = await recordFor(ext, '/users', 'HELD');
+  await page.evaluate((u) => { location.href = u; }, sink.origin + '/elsewhere');
+  await expect.poll(async () => {
+    const recs: InterceptedRequest[] = await ext.send({ type: 'getRecords' });
+    return recs.find((r) => r.id === rec.id)?.status;
+  }).toBe('DISCARDED_PAGE_GONE');
+  expect((await ext.send({ type: 'getState' })).heldCount).toBe(0);
+  expect(sink.connections).toBe(0);
+});

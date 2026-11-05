@@ -33,7 +33,8 @@ if (!(window.__NI_BRIDGE_ALIVE__ && window.__NI_BRIDGE_ALIVE__())) {
     }
   });
 
-  chrome.runtime.onMessage.addListener((msg: TabMessage) => {
+  chrome.runtime.onMessage.addListener((msg: TabMessage, _sender, sendResponse) => {
+    if (msg?.type === 'alive') { sendResponse(true); return; }
     if (msg && (msg.type === 'state' || msg.type === 'doRelease' || msg.type === 'doDiscard')) toPage(msg);
   });
 

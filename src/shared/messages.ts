@@ -18,7 +18,9 @@ export type BgRequest =
 export type TabMessage =
   | { type: 'state'; enabled: boolean; mode: Mode }
   | { type: 'doRelease'; hookId: string }
-  | { type: 'doDiscard'; hookId: string };
+  | { type: 'doDiscard'; hookId: string }
+  /** O background pergunta se o documento do frame ainda existe (responde true). */
+  | { type: 'alive' };
 
 /** MAIN world -> bridge (detail = JSON string). */
 export const EV_TO_BRIDGE = '__ni_to_bridge';
@@ -35,7 +37,9 @@ export type BridgeToPage =
   | { type: 'bridgeReady' }
   | { type: 'state'; enabled: boolean; mode: Mode }
   | { type: 'doRelease'; hookId: string }
-  | { type: 'doDiscard'; hookId: string };
+  | { type: 'doDiscard'; hookId: string }
+  /** O background pergunta se o documento do frame ainda existe (responde true). */
+  | { type: 'alive' };
 
 /** Nome do port de UI ao vivo. */
 export const UI_PORT = 'ni-ui';
