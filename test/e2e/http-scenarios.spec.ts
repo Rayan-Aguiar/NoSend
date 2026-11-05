@@ -232,3 +232,26 @@ test.describe('record metadata', () => {
     expect(sink.connections).toBe(0);
   });
 });
+
+test('blocked async XHR follows native event sequence', async ({ ext, openApp, page, sink }) => {
+  await openApp();
+  await ext.send({ type: 'setEnabled', enabled: true });
+  const r = await page.evaluate((s) => new Promise((res) => {
+    const x = new XMLHttpRequest();
+    const log: string[] = [];
+    for (const ev of ['loadstart', 'readystatechange', 'error', 'loadend']) {
+      x.addEventListener(ev, () => log.push(`${ev}:${x.readyState}`));
+    }
+    x.open('POST', s + '/xhrseq');
+    log.length = 0; // ignora o readystatechange do open()
+    x.send('a');
+    const afterSend = x.readyState;
+    x.addEventListener('loadend', () => res({ afterSend, log, status: x.status }));
+  }), sink.origin);
+  expect(r).toEqual({
+    afterSend: 1,
+    log: ['loadstart:1', 'readystatechange:4', 'error:4', 'loadend:4'],
+    status: 0,
+  });
+  expect(sink.connections).toBe(0);
+});

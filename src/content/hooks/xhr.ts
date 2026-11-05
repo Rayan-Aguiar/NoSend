@@ -30,11 +30,13 @@ export function installXhrHook(ctx: HookCtx): void {
     return nSetHeader.call(this, name, value);
   };
 
-  /** Falha de rede como o navegador reporta: readyState 4, status 0, error + loadend. */
+  /** Falha de rede como o navegador reporta: `loadstart` (síncrono, como no send() nativo) com
+   *  readyState 1; depois, em outra tarefa, readyState 4, status 0, readystatechange, error, loadend. */
   function failAsync(xhr: XMLHttpRequest): void {
-    const values = { readyState: 4, status: 0, statusText: '', response: '', responseText: '', responseURL: '' };
-    for (const [k, v] of Object.entries(values)) Object.defineProperty(xhr, k, { value: v, configurable: true });
+    xhr.dispatchEvent(new ProgressEvent('loadstart'));
     setTimeout(() => {
+      const values = { readyState: 4, status: 0, statusText: '', response: '', responseText: '', responseURL: '' };
+      for (const [k, v] of Object.entries(values)) Object.defineProperty(xhr, k, { value: v, configurable: true });
       xhr.dispatchEvent(new Event('readystatechange'));
       xhr.dispatchEvent(new ProgressEvent('error'));
       xhr.dispatchEvent(new ProgressEvent('loadend'));
@@ -60,6 +62,8 @@ export function installXhrHook(ctx: HookCtx): void {
       throw new DOMException(`Failed to execute 'send' on 'XMLHttpRequest': Failed to load '${m.url}'.`, 'NetworkError');
     }
     if (held) {
+      // Segurado: nenhum evento até a decisão. Liberar chama o send() nativo (que dispara o
+      // próprio loadstart); Descartar segue a sequência de falha de rede.
       const xhr = this;
       ctx.registerHeld(hookId, () => {
         xhr.addEventListener('loadend', () => {
