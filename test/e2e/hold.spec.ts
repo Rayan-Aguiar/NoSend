@@ -173,3 +173,20 @@ test('fail mode records are not releasable', async ({ ext, openApp, page, sink }
   expect(r.ok).toBe(false);
   expect(sink.connections).toBe(0);
 });
+
+test('websocket ignores hold (fails immediately)', async ({ ext, openApp, page, sink }) => {
+  await openApp();
+  await holdOn(ext);
+  const events = await page.evaluate((u) => new Promise<string[]>((resolve) => {
+    const ev: string[] = [];
+    const ws = new WebSocket(u);
+    ws.onopen = () => ev.push('open');
+    ws.onerror = () => ev.push('error');
+    ws.onclose = () => { ev.push('close'); resolve(ev); };
+    setTimeout(() => resolve(ev), 3000);
+  }), sink.wsOrigin + '/ws');
+  expect(events).toEqual(['error', 'close']);
+  const recs = await ext.send({ type: 'getRecords' });
+  expect(recs.find((r: any) => r.kind === 'websocket')?.status).toBe('BLOCKED');
+  expect(sink.connections).toBe(0);
+});
