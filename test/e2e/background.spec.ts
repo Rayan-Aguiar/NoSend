@@ -148,6 +148,14 @@ test('enabled status lists the permanent gaps', async ({ ext }) => {
 test('hooked tabs survive background memory loss (session storage)', async ({ ext, openApp }) => {
   await openApp();
   await expect.poll(async () => ((await ext.send({ type: 'getState' })) as ExtState).hookedTabs.length).toBeGreaterThan(0);
-  const stored = await ext.eval(() => chrome.storage.session.get('ni_hooked_tabs'), null);
-  expect((stored.ni_hooked_tabs as number[]).length).toBeGreaterThan(0);
+  const stored = await ext.eval(() => chrome.storage.session.get('ni_hooked_docs'), null);
+  expect((stored.ni_hooked_docs as Array<[number, string]>).length).toBeGreaterThan(0);
+});
+
+test('tab leaves hookedTabs when it navigates to a page without hooks', async ({ ext, openApp, page, app }) => {
+  await openApp();
+  const tabId: number = await ext.eval(async (origin) => (await chrome.tabs.query({ url: `${origin}/*` }))[0].id!, app.origin);
+  await expect.poll(async () => ((await ext.send({ type: 'getState' })) as ExtState).hookedTabs).toContain(tabId);
+  await page.goto('chrome://version/');
+  await expect.poll(async () => ((await ext.send({ type: 'getState' })) as ExtState).hookedTabs).not.toContain(tabId);
 });

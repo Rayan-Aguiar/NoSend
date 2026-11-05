@@ -186,3 +186,19 @@ test('clear', async ({ context, ext, openApp, run }) => {
   await expect(rows(viewer)).toHaveCount(0);
   expect((await ext.send<InterceptedRequest[]>({ type: 'getRecords' })).length).toBe(0);
 });
+
+test('popup flags reduced capture for a tab without hooks', async ({ context, ext, openApp, page, app }) => {
+  await openApp();
+  await ext.send({ type: 'setEnabled', enabled: true });
+  const tabId: number = await ext.eval(async (origin) => (await chrome.tabs.query({ url: `${origin}/*` }))[0].id!, app.origin);
+  await expect.poll(async () => ((await ext.send({ type: 'getState' })) as ExtState).hookedTabs).toContain(tabId);
+
+  const hooked = await openExtPage(context, ext, `popup.html?tabId=${tabId}`);
+  await expect(hooked.locator('#ni-status')).toContainText('PROTEGIDO');
+  await expect(hooked.locator('#ni-tab-note')).toBeHidden();
+
+  await page.goto('chrome://version/');
+  const reduced = await openExtPage(context, ext, `popup.html?tabId=${tabId}`);
+  await expect(reduced.locator('#ni-tab-note')).toBeVisible();
+  await expect(reduced.locator('#ni-tab-note')).toContainText('captura reduzida');
+});

@@ -1,6 +1,7 @@
 // Popup: liga/desliga, modo, limite, status fail-safe, contadores e atalhos.
 import type { ExtState, Mode } from '../shared/types';
 import { connectUi, el, send } from '../ui/client';
+import { renderTabNote } from '../ui/tab-note';
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const toggle = $<HTMLInputElement>('ni-toggle');
@@ -12,6 +13,15 @@ const limit = $<HTMLInputElement>('ni-limit');
 const count = $<HTMLElement>('ni-count');
 const held = $<HTMLElement>('ni-held');
 const msg = $<HTMLElement>('ni-msg');
+const tabNote = $<HTMLElement>('ni-tab-note');
+
+/** Aba alvo: ?tabId=N (popup aberto como página) ou a aba ativa da janela. */
+let targetTab: number | undefined;
+const tabReady: Promise<void> = (async () => {
+  const fromQuery = Number(new URLSearchParams(location.search).get('tabId'));
+  if (Number.isInteger(fromQuery) && fromQuery > 0) { targetTab = fromQuery; return; }
+  try { [{ id: targetTab }] = await chrome.tabs.query({ active: true, currentWindow: true }); } catch { /* sem aba */ }
+})();
 
 const LABELS = {
   OFF: ['DESLIGADO', 'Requisições passam normalmente.'],
@@ -36,6 +46,7 @@ function render(s: ExtState): void {
   if (document.activeElement !== limit) { limit.value = String(s.limit); lastLimit = limit.value; }
   count.textContent = String(s.count);
   held.textContent = String(s.heldCount);
+  void tabReady.then(() => renderTabNote(tabNote, s, targetTab));
 }
 
 function fail(e: unknown): void { msg.textContent = `erro: ${(e as Error)?.message ?? e}`; }

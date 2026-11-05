@@ -52,6 +52,8 @@ Legenda:
 | Modo Falhar não liberável | `hold.spec.ts › fail mode records are not releasable` |
 | Avisos permanentes com ON | `background.spec.ts › enabled status lists the permanent gaps` |
 | `hookedTabs` sobrevive ao reinício do service worker | `background.spec.ts › hooked tabs survive background memory loss (session storage)` |
+| Aviso "captura reduzida" por aba (popup/painel); aba sai da lista ao navegar para página sem hooks | `background.spec.ts › tab leaves hookedTabs when it navigates to a page without hooks`; `ui.spec.ts › popup flags reduced capture for a tab without hooks` |
+| HELD que sai do histórico (limite ou Limpar) é descartado na página (erro de rede) | `hold.spec.ts › clear history discards HELD requests…`; `hold.spec.ts › HELD evicted by history limit is discarded…` |
 | Registro forjado com método inválido rejeitado | `local-schemes.spec.ts › ON: forged hook record with invalid method is rejected` |
 | cURL seguro para o shell (método citado, comentários sem CR/LF, `--form-string`) | `curl.spec.ts › shell injection: method, comment text and form values are neutralized` |
 | Popup | `ui.spec.ts › popup toggle enables`, `popup shows PROTEÇÃO INCOMPLETA with reason`, `popup mode and limit`, `clear` |

@@ -15,10 +15,12 @@ import { discardRecord, recordHeldOutcome, releaseRecord, startReleaseTracking }
 let status: StatusResult = { status: 'OFF', reasons: [], warnings: [] };
 /** Erros da última ativação; somados aos motivos da verificação até o próximo toggle. */
 let activationErrors: string[] = [];
-const hookedTabs = new Set<number>();
+/** Aba → documentId do frame principal cujos hooks reportaram heartbeat. Outro documento na
+ *  aba (navegação para página sem hooks, ex.: chrome://) tira a aba da lista: "captura reduzida". */
+const hookedDocs = new Map<number, string>();
 /** Sobrevive a reinícios do service worker (storage.session vive enquanto o navegador estiver aberto). */
 async function persistHookedTabs(): Promise<void> {
-  await chrome.storage.session.set({ ni_hooked_tabs: [...hookedTabs] }).catch(() => {});
+  await chrome.storage.session.set({ ni_hooked_docs: [...hookedDocs] }).catch(() => {});
 }
 /** Ports de UI conectados (popup, painel, visualizador). */
 const uiPorts = new Set<chrome.runtime.Port>();
@@ -67,7 +69,7 @@ async function snapshot(): Promise<ExtState> {
     warnings: status.warnings,
     count: recs.length,
     heldCount: recs.filter((r) => r.status === 'HELD').length,
-    hookedTabs: [...hookedTabs],
+    hookedTabs: [...hookedDocs.keys()],
   };
 }
 
@@ -110,8 +112,8 @@ async function disable(): Promise<void> {
 // ---- inicialização (todo wake-up do service worker) ----
 const ready: Promise<void> = (async () => {
   const settings = await getSettings();
-  const { ni_hooked_tabs } = await chrome.storage.session.get('ni_hooked_tabs').catch(() => ({ ni_hooked_tabs: [] }));
-  for (const id of (ni_hooked_tabs as number[] | undefined) ?? []) hookedTabs.add(id);
+  const { ni_hooked_docs } = await chrome.storage.session.get('ni_hooked_docs').catch(() => ({ ni_hooked_docs: [] }));
+  for (const [tab, doc] of (ni_hooked_docs as Array<[number, string]> | undefined) ?? []) hookedDocs.set(tab, doc);
   await loadHistory(settings.limit);
   await removeAllAllowRules().catch(() => {});
   if (settings.enabled) {
@@ -203,9 +205,12 @@ export async function handle(req: BgRequest, sender?: chrome.runtime.MessageSend
     case 'discard':
       return discardRecord(req.id);
     case 'hookHeartbeat':
-      if (sender?.tab?.id !== undefined && !hookedTabs.has(sender.tab.id)) {
-        hookedTabs.add(sender.tab.id);
+      // Só o frame principal define a aba; documentId distingue a página atual das anteriores.
+      if (sender?.tab?.id !== undefined && sender.frameId === 0 && sender.documentId
+          && hookedDocs.get(sender.tab.id) !== sender.documentId) {
+        hookedDocs.set(sender.tab.id, sender.documentId);
         await persistHookedTabs();
+        scheduleUiPush();
       }
       return { ok: true };
     default:
@@ -220,7 +225,22 @@ chrome.runtime.onMessage.addListener((msg: BgRequest, sender, sendResponse) => {
 startDnrLog(ready);
 startReleaseTracking();
 
-chrome.tabs.onRemoved.addListener((tabId) => { hookedTabs.delete(tabId); void persistHookedTabs(); });
+chrome.tabs.onRemoved.addListener((tabId) => {
+  if (hookedDocs.delete(tabId)) { void persistHookedTabs(); scheduleUiPush(); }
+});
+// Novo documento no frame principal: a aba só volta à lista quando os hooks dele reportarem.
+// Comparar documentId evita apagar um heartbeat do novo documento que chegou antes deste evento.
+chrome.webNavigation.onCommitted.addListener((d) => {
+  if (d.frameId !== 0) return;
+  void ready.then(() => {
+    const doc = hookedDocs.get(d.tabId);
+    if (doc !== undefined && doc !== d.documentId) {
+      hookedDocs.delete(d.tabId);
+      void persistHookedTabs();
+      scheduleUiPush();
+    }
+  });
+});
 chrome.runtime.onInstalled.addListener(async () => {
   await ready;
   const s = await getSettings();

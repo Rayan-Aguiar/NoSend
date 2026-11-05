@@ -69,6 +69,9 @@ pre { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-bre
 .ni-status-INCOMPLETE, .ni-status-ACTIVATING { background: var(--orange-bg); border-color: var(--orange); }
 .ni-status-INCOMPLETE strong, .ni-status-ACTIVATING strong { color: var(--orange); }
 .ni-reasons { margin: 6px 0 0; padding-left: 18px; color: var(--orange); }
+.ni-tab-note { margin: 8px 0 0; padding: 6px 10px; border-radius: 6px; font-size: 12px;
+  background: var(--orange-bg); border: 1px solid var(--orange); color: var(--orange); }
+.ni-tab-note[hidden] { display: none; }
 .ni-warnings { margin: 10px 0 0; padding-left: 18px; color: var(--muted); font-size: 12px; }
 
 .ni-row2 { display: flex; gap: 10px; margin: 12px 0; }
@@ -87,6 +90,9 @@ pre { font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-bre
 /* ---- lista + detalhe (painel / visualizador) ---- */
 .ni-page { height: 100vh; overflow: hidden; }
 .ni-page #app { display: flex; flex-direction: column; height: 100%; }
+.ni-panel { display: flex; flex-direction: column; }
+.ni-panel #app { flex: 1; min-height: 0; height: auto; }
+.ni-panel .ni-tab-note { margin: 0; border-radius: 0; border-width: 0 0 1px; }
 .ni-toolbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 8px;
   border-bottom: 1px solid var(--line); background: var(--bg-2); }
 .ni-toolbar input[type="search"] { min-width: 200px; flex: 0 1 280px; background: var(--bg); }
