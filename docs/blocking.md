@@ -174,4 +174,4 @@ Observação de manutenção: o spike rodou antes de existir `src/background/pri
 
 ## Última execução
 
-Data: 2026-11-05. Chrome for Testing 155.0.8059.12 (Playwright chromium-1247), headless. `npm test` → 101 passed, 2 skipped (fixme: Reporting API). Todos os cenários com o interceptor ON afirmam `sink.connections === 0`.
+Data: 2026-11-05. Chrome for Testing 155.0.8059.12 (Playwright chromium-1247), headless. `npm test` → 110 passed, 2 skipped (fixme: Reporting API). Todos os cenários com o interceptor ON afirmam `sink.connections === 0`.

@@ -15,7 +15,7 @@ export const PERMANENT_GAPS = [
   'Conexões (WebSocket, EventSource, uploads, WebTransport) abertas antes de ligar podem continuar ativas: ligue o interceptor antes de abrir a funcionalidade que conecta.',
   'Requisições de workers, formulários, navegações e tags HTML são bloqueadas, mas registradas sem headers/body.',
   'Não bloqueado: WebRTC, tráfego interno do Chrome, outras extensões, requisições já em voo no momento de ligar.',
-  'Não verificado: uploads da Reporting API (CSP report-to, NEL) — ver docs/coverage-matrix.md.',
+  'Não verificado: uploads da Reporting API (CSP report-to, NEL) e requisições feitas pelo navegador em nome da página (FedCM, Payment Request) — ver docs/coverage-matrix.md.',
 ];
 
 export async function computeStatus(enabled: boolean, extraReasons: string[] = []): Promise<StatusResult> {

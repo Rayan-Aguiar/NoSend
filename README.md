@@ -64,7 +64,7 @@ URLs locais (`data:`, `blob:`, `about:`, `chrome-extension:`, `javascript:`) nã
 | **PROTEGIDO** | Regra de bloqueio presente e idêntica à esperada, matcher do DNR confirmou bloqueio para todos os tipos de recurso, predição de rede desligada e controlada pela extensão. |
 | **PROTEÇÃO INCOMPLETA** | Ligado, mas alguma verificação falhou. Os motivos são listados. Não confie no bloqueio até resolver. |
 
-O status é recalculado ao ligar, a cada inicialização do service worker e a cada consulta de estado (abertura do popup/painel). Ao ligar, o status final só é publicado depois que as páginas abertas receberam o novo estado. Com ON, o popup sempre mostra também os **avisos** das lacunas permanentes (conexões abertas antes de ligar, captura reduzida de workers/formulários/navegações/tags, o que não é bloqueado, Reporting API não verificada) e, se for o caso, o aviso de modo anônimo não permitido. Avisos não rebaixam o status. Detalhes em [docs/architecture.md](docs/architecture.md#status-de-proteção).
+O status é recalculado ao ligar, a cada inicialização do service worker e a cada consulta de estado (abertura do popup/painel). Ao ligar, o status final só é publicado depois que as páginas abertas receberam o novo estado. Com ON, o popup sempre mostra também os **avisos** das lacunas permanentes (conexões abertas antes de ligar, captura reduzida de workers/formulários/navegações/tags, o que não é bloqueado, Reporting API e requisições do navegador em nome da página não verificadas) e, se for o caso, o aviso de modo anônimo não permitido. Avisos não rebaixam o status. Detalhes em [docs/architecture.md](docs/architecture.md#status-de-proteção).
 
 ### Modos
 
@@ -140,6 +140,7 @@ Com ON, a própria origem da app também é bloqueada. Por isso clique em `prepa
 
 - **Desempenho com histórico grande**: a cada mudança o service worker envia a lista inteira de registros à UI e persiste o histórico inteiro (sem push/persistência incremental). Com limite perto de 10000 e bodies grandes, UI e service worker podem ficar lentos. Mantenha o limite moderado (o padrão 1000 e o teto de 1 MB por body limitam o custo).
 - **Reporting API não verificada**: uploads de CSP `report-to`, `Reporting-Endpoints` e NEL são feitos pelo `ReportingService` do Chrome; não foi possível confirmar por teste se o DNR os bloqueia (ver [matriz](docs/coverage-matrix.md)).
+- **Requisições do navegador em nome da página não verificadas**: FedCM (config/contas/token do IdP) e Payment Request (manifesto do método de pagamento) são buscados pelo processo do navegador; não foi testado se o DNR os bloqueia.
 - **Painel DevTools verificado só manualmente**: os testes automatizados cobrem popup e visualizador, que usam o mesmo componente de lista/detalhe.
 - **XHR síncrono não pode ser segurado**: falha imediatamente mesmo no modo Segurar.
 - **`fetch` segurado ignora `AbortSignal`**: abortar um `fetch` em `HELD` não rejeita a promise nem descarta o registro; use Descartar.

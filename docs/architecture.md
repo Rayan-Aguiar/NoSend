@@ -108,7 +108,7 @@ Requisições `HELD` existentes ao desligar permanecem `HELD`.
 Qualquer falha → `PROTEÇÃO INCOMPLETA` com a lista de motivos; exceção na verificação também vira motivo. O status é recalculado ao ligar, a cada wake-up do service worker e em todo `getState` (popup/painel). Avisos (`warnings`, não rebaixam o status, exibidos no popup):
 
 - acesso a modo anônimo desligado (ON ou OFF);
-- com ON, **sempre** as lacunas permanentes (`PERMANENT_GAPS` em `status.ts`): conexões abertas antes de ligar podem continuar ativas; workers/formulários/navegações/tags HTML registrados sem headers/body; não bloqueado (WebRTC, tráfego interno do Chrome, outras extensões, requisições em voo); Reporting API não verificada. Teste: `background.spec.ts › enabled status lists the permanent gaps`.
+- com ON, **sempre** as lacunas permanentes (`PERMANENT_GAPS` em `status.ts`): conexões abertas antes de ligar podem continuar ativas; workers/formulários/navegações/tags HTML registrados sem headers/body; não bloqueado (WebRTC, tráfego interno do Chrome, outras extensões, requisições em voo); Reporting API e requisições do navegador em nome da página (FedCM, Payment Request) não verificadas. Teste: `background.spec.ts › enabled status lists the permanent gaps`.
 
 Badge: `ON` vermelho (protegido), `!` laranja (incompleto), `…` laranja (ativando), vazio (desligado). Ícone (`chrome.action.setIcon`): variante `icons/on-*.png` sempre que o status não é `OFF`, `icons/off-*.png` quando desligado. Badge e ícone são atualizados em `setStatus` (`updateBadge`).
 
