@@ -67,6 +67,7 @@ Notas:
 - **Validação nativa preservada**: URLs WebSocket inválidas, esquemas não permitidos, fragmentos e `protocols` inválidos lançam as mesmas exceções do construtor nativo, antes de registrar.
 - **Fidelidade**: as funções substitutas reportam `name`, `length` e `toString()` nativos (`[native code]`); os construtores de WebSocket/EventSource mantêm protótipo, constantes estáticas e `instanceof`. Testes: `http-scenarios.spec.ts › hooks keep native function identity`, `realtime.spec.ts › constructors keep native identity`. Não é objetivo resistir a scripts hostis.
 - **Um hook com falha de instalação não impede os outros**; o DNR continua bloqueando.
+- **URLs locais passam direto**: `fetch` e XHR (inclusive síncrono) para `data:`, `blob:`, `about:`, `chrome-extension:` e `javascript:` chamam a API nativa sem registrar (`isLocalUrl` em `src/content/hooks/common.ts`); não são rede. Teste: `local-schemes.spec.ts › ON: data: and blob: URLs keep working and are not recorded`.
 - Headers adicionados pelo navegador (Cookie, User-Agent, Origin, `Sec-*`) não existem no registro, porque o envio nunca ocorre. Todo registro de hook traz uma nota dizendo isso.
 
 ### Conexões abertas antes do ON
@@ -76,7 +77,12 @@ Os hooks guardam os WebSockets e EventSources criados pela página enquanto OFF.
 - Cada conexão ainda aberta é fechada com o `close()` nativo e registrada com a nota "conexão aberta antes do ON encerrada pelo interceptor".
 - **WebSocket**: o `close()` nativo envia um **frame de controle close** ao servidor (sem dados da aplicação) antes de encerrar o TCP. É o único byte que chega ao servidor nessa situação. Mensagens enviadas depois do fechamento são registradas e não chegam ao servidor. Teste: `realtime.spec.ts › connection opened while OFF is closed when the interceptor turns ON`.
 - **EventSource**: fechado (encerra a conexão HTTP); não há frame de aplicação.
-- Conexões abertas por **workers** não são alcançáveis pelos hooks e continuam abertas (o DNR só atua em requisições novas). Dica: ligar o interceptor antes de abrir a funcionalidade que conecta.
+- Só são fechados os sockets criados **pelos hooks** enquanto OFF, em páginas que já tinham hooks. Continuam abertos, e podem continuar enviando dados com status PROTEGIDO (o DNR só atua em requisições novas):
+  - WebSocket/EventSource abertos em páginas que só receberam os hooks no momento de ligar (abas já abertas, injetadas no toggle): os objetos nativos foram criados antes do patch e não são rastreáveis do MAIN world;
+  - conexões abertas por **workers** (sem hooks);
+  - sessões **WebTransport** (sem hook);
+  - uploads `fetch` em streaming (body `ReadableStream`) já iniciados.
+- Por isso, com ON, os avisos do status (`PERMANENT_GAPS`) sempre pedem para ligar o interceptor **antes** de abrir a funcionalidade que conecta.
 
 ## Captura de fallback (`onRuleMatchedDebug`)
 
@@ -130,6 +136,10 @@ Riscos e limites:
 4. Se a página/frame que fez a requisição não existir mais, Liberar remove a regra e marca `DISCARDED_PAGE_GONE`. Aba fechada ou navegação também marcam os `HELD` (`hold.spec.ts › held request dies with its page`, `held request discarded when tab closes`).
 5. A mensagem de erro de `releaseResult` sempre sugere "redirect ou service worker", mesmo que a falha tenha outra causa (ex.: servidor fora do ar).
 
+### Riscos conhecidos
+
+- **Registro `HELD` forjado**: uma página hostil pode disparar o evento da ponte (`__ni_to_bridge`) com um registro `HELD` falso (com método válido, que passa em `validHookRecord`). Se o usuário clicar **Liberar** nesse registro, a extensão abre a regra `allow` estreita para aquela aba/URL/método; durante essa janela (até o primeiro match ou 10 s) a página pode enviar **um body diferente** por uma referência nativa não interceptada (ex.: `fetch` guardado antes dos hooks ou de um contexto sem hook). Só libere registros de páginas confiáveis.
+
 ## Status fail-safe
 
 - `PROTEGIDO` só com: regra presente e idêntica, `testMatchOutcome` confirmando todos os tipos, predição de rede desligada e controlada pela extensão, e nenhum erro na ativação. Qualquer outra coisa → `PROTEÇÃO INCOMPLETA` com motivos.
@@ -137,6 +147,8 @@ Riscos e limites:
 - O build de teste tem uma flag (`__test_force_dnr_failure` em `chrome.storage.local`) que força a falha da instalação da regra (`background.spec.ts › forced DNR failure → INCOMPLETE`). No build de produção o trecho é removido (`__TEST__ = false`).
 - Nos hooks, o fail-safe é o oposto do "desligado": estado desconhecido ⇒ ON/Falhar (`injection.spec.ts › missing state defaults to ON`).
 - Ao desligar, a regra DNR é removida primeiro e o estado das páginas por último: na janela intermediária, os hooks ainda falham as requisições.
+- Ao ligar, o status final só é publicado depois de as páginas receberem o estado ON (`applyPageState` antes de `refreshStatus`).
+- Com ON, os avisos sempre listam as lacunas permanentes (`PERMANENT_GAPS` em `src/background/status.ts`), exibidas no popup (`background.spec.ts › enabled status lists the permanent gaps`).
 
 ## Resultados do spike
 
@@ -162,4 +174,4 @@ Observação de manutenção: o spike rodou antes de existir `src/background/pri
 
 ## Última execução
 
-TODO: preencher com o resumo de npm test
+Data: 2026-11-05. Chrome for Testing 155.0.8059.12 (Playwright chromium-1247), headless. `npm test` → 92 passed, 2 skipped (fixme: Reporting API). Todos os cenários com o interceptor ON afirmam `sink.connections === 0`.

@@ -51,7 +51,9 @@ A instalação descompactada é obrigatória: a captura de fallback (`onRuleMatc
 
 Com o interceptor ON, **navegações e recarregamentos que vão à rede falham** (recarregar a aba, abrir uma URL nova, enviar um `<form>`). Isso é esperado: a navegação também é uma requisição. Navegações atendidas pelo service worker da página ou pelo bfcache podem "funcionar", porque não tocam a rede — nenhum servidor é contatado. Para recarregar a aplicação, desligue, recarregue e ligue de novo.
 
-Ligue o interceptor **antes** de abrir a funcionalidade que conecta: WebSockets/EventSources abertos pela página antes do ON são fechados ao ligar, mas conexões abertas por workers continuam (ver matriz).
+Ligue o interceptor **antes** de abrir a funcionalidade que conecta. Ao ligar, só são fechados os WebSockets/EventSources criados **pelos hooks** enquanto OFF, em páginas que já tinham hooks. Continuam abertos (e podem continuar enviando com status PROTEGIDO): WebSocket/EventSource abertos em páginas que só receberam os hooks no momento de ligar (abas já abertas, injetadas no toggle), conexões de workers, sessões WebTransport e uploads `fetch` em streaming. Os avisos do status lembram disso enquanto o interceptor está ON (ver [matriz](docs/coverage-matrix.md)).
+
+URLs locais (`data:`, `blob:`, `about:`, `chrome-extension:`, `javascript:`) não são rede: `fetch` e XHR para elas passam direto pelos hooks, funcionam normalmente com ON e não são registradas.
 
 ### Status
 
@@ -62,7 +64,7 @@ Ligue o interceptor **antes** de abrir a funcionalidade que conecta: WebSockets/
 | **PROTEGIDO** | Regra de bloqueio presente e idêntica à esperada, matcher do DNR confirmou bloqueio para todos os tipos de recurso, predição de rede desligada e controlada pela extensão. |
 | **PROTEÇÃO INCOMPLETA** | Ligado, mas alguma verificação falhou. Os motivos são listados. Não confie no bloqueio até resolver. |
 
-O status é recalculado ao ligar, a cada inicialização do service worker e a cada consulta de estado (abertura do popup/painel). Detalhes em [docs/architecture.md](docs/architecture.md#status-de-proteção).
+O status é recalculado ao ligar, a cada inicialização do service worker e a cada consulta de estado (abertura do popup/painel). Ao ligar, o status final só é publicado depois que as páginas abertas receberam o novo estado. Com ON, o popup sempre mostra também os **avisos** das lacunas permanentes (conexões abertas antes de ligar, captura reduzida de workers/formulários/navegações/tags, o que não é bloqueado, Reporting API não verificada) e, se for o caso, o aviso de modo anônimo não permitido. Avisos não rebaixam o status. Detalhes em [docs/architecture.md](docs/architecture.md#status-de-proteção).
 
 ### Modos
 
@@ -78,14 +80,24 @@ Ao desligar, requisições `HELD` existentes continuam `HELD` (você decide libe
 
 ### Visualização
 
-- **Popup** (ícone da extensão): liga/desliga, seletor Falhar/Segurar, limite do histórico (100–10000, padrão 1000), status com motivos e avisos, contadores (total e `HELD`), **Limpar histórico**, **Abrir visualizador**, e a dica "F12 → aba Network Interceptor".
-- **Visualizador** (`viewer.html`, aberto pelo popup em uma aba): lista de todos os registros, filtros, detalhe e ações.
-- **Painel DevTools**: F12 → aba **Network Interceptor**. Mesmo componente do visualizador, filtrando pela aba inspecionada (com opção de ver todas).
-- **Badge do ícone**: vermelho `ON` quando protegido, laranja `!` quando incompleto, laranja `…` ativando, vazio quando desligado.
+- **Popup** (ícone da extensão):
+  - interruptor no cabeçalho (dica "Ligar/desligar interceptação");
+  - status em destaque: **DESLIGADO** ("Requisições passam normalmente."), **ATIVANDO** ("Instalando e verificando o bloqueio…"), **PROTEGIDO** ("MODO INTERCEPTAÇÃO ATIVO"), **PROTEÇÃO INCOMPLETA** ("Alguma verificação falhou — não confie no bloqueio."), seguido da lista de motivos;
+  - **Modo**: Falhar / Segurar;
+  - **Limite do histórico**: campo numérico (100–10000, passo 100, padrão 1000; aplicado ao sair do campo ou com Enter);
+  - contadores **Interceptadas** e **Seguradas (HELD)**;
+  - botões **Abrir visualizador** e **Limpar histórico**;
+  - dica "Painel completo: F12 → aba **Network Interceptor**";
+  - lista de avisos (lacunas permanentes com ON, modo anônimo não permitido).
+- **Visualizador** (`viewer.html`, aberto pelo popup em uma aba): lista de todos os registros, de todas as abas, filtros, detalhe e ações.
+- **Painel DevTools**: F12 → aba **Network Interceptor**. Mesmo componente do visualizador, com o checkbox **só esta aba** (marcado por padrão) que filtra pela aba inspecionada; desmarcado, mostra todas.
+- **Ícone e badge**: o ícone muda para a variante "on" sempre que a extensão está ligada (inclusive ATIVANDO e PROTEÇÃO INCOMPLETA) e "off" quando desligada (`chrome.action.setIcon`). Badge: vermelho `ON` quando protegido, laranja `!` quando incompleto, laranja `…` ativando, vazio quando desligado.
 
-Na lista: método, URL, horário, tipo, content-type, status. No detalhe: General, Request Headers, Query Parameters, Request Payload (interpretado, com opção de ver o original), Origem (aba, frame, initiator, stack), Notas. Ações: **Copiar como cURL**, **Liberar**/**Descartar** (só registros `HELD` capturados na página).
+Popup, visualizador e painel se atualizam ao vivo (port com o service worker; ver [docs/architecture.md](docs/architecture.md#visualização-ao-vivo)).
 
-TODO(UI): confirmar no código da Task 9 (`src/popup/popup.ts`, `src/ui/list-detail.ts`, `src/devtools/*.ts`) os rótulos exatos do popup (toggle, seletor, campo de limite, botões), o checkbox "só esta aba" do painel, o tooltip de Liberar desabilitado e a variante de ícone ON/OFF (`action.setIcon`).
+Filtros da lista: **Filtrar URL** (texto), **Método**, **Tipo**, **Status** e, no painel, **só esta aba**; um contador mostra "N de M" quando há filtro. Na lista (mais recentes primeiro): Método, URL, Horário, Tipo, Content-Type, Status. No detalhe: General, Request Headers, Query Parameters, Request Payload (interpretado, com o botão "ver original"/"ver interpretado"), Origem (aba, frame, initiator, stack), Notas. Ações: **Copiar cURL**; e **Liberar** / **Descartar** só em registros `HELD` capturados na página. Quando a URL é longa demais para uma regra de exceção exata, **Liberar** fica desabilitado com a dica "URL longa demais para uma exceção DNR exata" (habilitado, a dica é "Envia esta requisição uma vez").
+
+O cURL gerado é seguro para colar no shell: método citado quando não é um token HTTP válido (RFC 9110), comentários sem quebras de linha, e campos de formulário com `;`, `@` ou `<` usam `--form-string` (curl não lê arquivos nem interpreta `;type=`).
 
 Registros capturados só pela camada de rede (navegação, `<form>`, `<img>`, CSS, workers) não têm headers nem body — apenas URL, método, tipo e origem.
 
@@ -121,8 +133,16 @@ Com ON, a própria origem da app também é bloqueada. Por isso clique em `prepa
 - O histórico pode conter **tokens, cookies enviados manualmente em headers, senhas e dados pessoais** — é exatamente o que a aplicação tentou enviar.
 - Ele fica salvo **sem criptografia** no perfil do Chrome (`chrome.storage.local`, com permissão `unlimitedStorage`) até ser limpo. Use **Limpar histórico** ao terminar e não use a extensão em perfis compartilhados.
 - **Nada é enviado para fora da máquina**: a extensão não faz nenhuma chamada de rede, não tem analytics e as páginas da extensão não carregam fontes/CDN externas.
-- Registros de abas anônimas ficam **só em memória** e nunca são gravados em disco; somem quando o service worker reinicia ou o histórico é limpo.
-- **Copiar como cURL** só copia texto para a área de transferência; nada é executado.
+- Registros de abas anônimas ficam **só em memória** e não são gravados em disco; somem quando o service worker reinicia ou o histórico é limpo. A regra é conservadora: quando não dá para saber o perfil de origem (a consulta da aba falha, ou a requisição não tem aba — `tabId -1`, ex.: service worker — enquanto existe alguma janela anônima aberta), o registro é tratado como anônimo e também fica só em memória.
+- **Copiar cURL** só copia texto para a área de transferência; nada é executado.
+
+## Limitações conhecidas / próximos passos
+
+- **Desempenho com histórico grande**: a cada mudança o service worker envia a lista inteira de registros à UI e persiste o histórico inteiro (sem push/persistência incremental). Com limite perto de 10000 e bodies grandes, UI e service worker podem ficar lentos. Mantenha o limite moderado (o padrão 1000 e o teto de 1 MB por body limitam o custo).
+- **Reporting API não verificada**: uploads de CSP `report-to`, `Reporting-Endpoints` e NEL são feitos pelo `ReportingService` do Chrome; não foi possível confirmar por teste se o DNR os bloqueia (ver [matriz](docs/coverage-matrix.md)).
+- **Painel DevTools verificado só manualmente**: os testes automatizados cobrem popup e visualizador, que usam o mesmo componente de lista/detalhe.
+- **XHR síncrono não pode ser segurado**: falha imediatamente mesmo no modo Segurar.
+- **`fetch` segurado ignora `AbortSignal`**: abortar um `fetch` em `HELD` não rejeita a promise nem descarta o registro; use Descartar.
 
 ## Documentação
 

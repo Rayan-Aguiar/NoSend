@@ -15,9 +15,8 @@ Visão para mantenedores. Spec de referência: [`superpowers/specs/2026-11-05-ne
 | **Liberar / Descartar** | Regra DNR de sessão `allow` + mensagens para a aba | `src/background/release.ts`, `src/background/dnr.ts` (`addAllowRule`), `src/shared/regex.ts` |
 | **Estado / armazenamento** | Service worker + `chrome.storage.local` | `src/background/index.ts` (roteamento, toggle, badge), `state.ts` (configurações), `status.ts` (status fail-safe), `history.ts` (ring buffer + persistência) |
 | **Compartilhado** | Tipos, mensagens, serialização de body, cURL, ring buffer | `src/shared/types.ts`, `messages.ts`, `body.ts`, `curl.ts`, `ring.ts`, `regex.ts` |
-| **Visualização** | Popup, painel DevTools, `viewer.html` | `src/popup/popup.ts`, `src/devtools/devtools.ts`, `src/devtools/panel.ts`, `src/viewer/viewer.ts`, `src/ui/list-detail.ts`, `static/*.html`, `static/ui.css` |
-
-TODO(UI): confirmar os caminhos dos arquivos de UI e o port `ni-ui` (`UI_PORT` em `src/shared/messages.ts`) depois do commit da Task 9. No estado atual, `onHistoryChange` em `src/background/index.ts` ainda é um stub ("UI ao vivo: Task 9").
+| **Visualização** | Popup, painel DevTools, `viewer.html` | `src/popup/popup.ts` (`static/popup.html`), `src/devtools/devtools.ts` (`static/devtools.html`, registra o painel), `src/devtools/panel.ts` (`static/panel.html`), `src/viewer/viewer.ts` (`static/viewer.html`), `src/ui/list-detail.ts` (lista/detalhe compartilhado), `src/ui/client.ts` (mensagens, port ao vivo, DOM seguro, clipboard), `static/ui.css`, `static/icons/{on,off}-{16,32,48,128}.png` |
+| **Lógica de origem anônima** | Decide se um registro é anônimo (na dúvida: sim) | `src/background/incognito.ts` (`resolveIncognito`, `isIncognitoTab`) |
 
 Manifest (`static/manifest.json`): permissões `declarativeNetRequest`, `declarativeNetRequestFeedback`, `storage`, `privacy`, `scripting`, `tabs`, `webNavigation`, `unlimitedStorage`; `host_permissions: <all_urls>`; `incognito: "spanning"`; background como módulo ES. Os content scripts **não** estão no manifest: são registrados dinamicamente (ver "Estado síncrono").
 
@@ -59,9 +58,10 @@ Detalhes:
 - Os hooks capturam `dispatchEvent`, `addEventListener`, `CustomEvent`, `JSON.stringify/parse` **antes** de instalar qualquer patch, para não chamarem versões já interceptadas pela página.
 - **Fila até a ponte**: registros emitidos antes de a ponte responder `bridgeReady` ficam em fila no MAIN world e são enviados quando ela responde. Isso cobre a requisição disparada pelo primeiro `<script>` inline da página (teste `http-scenarios.spec.ts › request fired by first inline script is blocked and recorded`). O bloqueio não depende da fila: o hook já falhou a requisição sincronamente.
 - Mensagens para o background (`BgRequest`): `getState`, `setEnabled`, `setMode`, `setLimit`, `getRecords`, `clear`, `hookRecord`, `heldOutcome`, `release`, `discard`, `hookHeartbeat`. Background → aba (`TabMessage`): `state`, `doRelease`, `doDiscard`.
-- **A página pode forjar eventos** `__ni_to_bridge`. O background valida o formato (`validHookRecord`) antes de gravar, mas uma página hostil consegue inserir registros falsos no histórico ou reportar `heldOutcome` falso. Isso não afeta o bloqueio (DNR), só a fidelidade do histórico.
+- **A página pode forjar eventos** `__ni_to_bridge`. O background valida o formato (`validHookRecord`: `url`, `hookId`, `headers`, `kind` de hook e `method` obrigatoriamente um token HTTP RFC 9110 — `` ^[!#$%&'*+.^_`|~0-9A-Za-z-]+$ ``) antes de gravar; registros com método inválido são rejeitados (`local-schemes.spec.ts › ON: forged hook record with invalid method is rejected`). Ainda assim uma página hostil consegue inserir registros falsos no histórico ou reportar `heldOutcome` falso. Isso não afeta o bloqueio (DNR), só a fidelidade do histórico.
 - Uma ponte de uma instância anterior da extensão (extensão recarregada) fica inerte (`__NI_BRIDGE_ALIVE__` checa `chrome.runtime.id`); a nova ponte assume.
-- Heartbeat: ao instalar, os hooks enviam `heartbeat` → `hookHeartbeat`; o background guarda `hookedTabs` (exposto em `getState`) para a UI distinguir abas com captura completa de abas "bloqueando, captura reduzida".
+- Heartbeat: ao instalar, os hooks enviam `heartbeat` → `hookHeartbeat`; o background guarda `hookedTabs` (exposto em `getState`) para distinguir abas com captura completa de abas "bloqueando, captura reduzida". O conjunto é persistido em `chrome.storage.session` (`ni_hooked_tabs`) e recarregado em cada wake-up do service worker, então sobrevive ao encerramento por inatividade (`background.spec.ts › hooked tabs survive background memory loss (session storage)`); aba fechada sai do conjunto.
+- **URLs locais**: os hooks de `fetch` e XHR deixam passar direto, sem registrar, URLs `data:`, `blob:`, `about:`, `chrome-extension:` e `javascript:` (`isLocalUrl` em `src/content/hooks/common.ts`) — não são rede. Teste: `local-schemes.spec.ts › ON: data: and blob: URLs keep working and are not recorded`.
 
 ## Estado síncrono nos hooks (§3.3)
 
@@ -77,7 +77,7 @@ Mecanismo implementado:
    - **`executeScript`** em todas as abas `http(s)`/`file` (`injectIntoOpenTabs`, `allFrames`, `injectImmediately`): reinjeta `state-*.js`, `hooks.js` e `bridge.js`. Os scripts são idempotentes (`__NI_INSTALLED__`, `__NI_BRIDGE_ALIVE__`); a reexecução do script de estado chama `__NI_APPLY_STATE__`. Isso também cobre abas abertas antes da instalação (feito também em `runtime.onInstalled`). Abas onde a injeção falha (`chrome://`, Web Store, outras extensões) ficam só com o DNR.
 5. **Fail-safe**: se os hooks rodarem sem `__NI_STATE__` válido, assumem `{enabled: true, mode: 'fail'}` (`FAILSAFE` em `src/content/hooks/index.ts`). Teste: `injection.spec.ts › missing state defaults to ON`.
 
-Quando o estado muda para ON, os hooks de WebSocket/EventSource fecham conexões abertas enquanto OFF (`onStateChange`), ver [blocking.md](blocking.md#conexões-abertas-antes-do-on).
+Quando o estado muda para ON, os hooks de WebSocket/EventSource fecham as conexões que **eles próprios** criaram enquanto OFF (`onStateChange`). Sockets abertos antes de os hooks existirem na página (ex.: abas que só recebem os hooks por injeção no toggle) não são rastreáveis do MAIN world e continuam abertos; ver [blocking.md](blocking.md#conexões-abertas-antes-do-on).
 
 ## Ligar / desligar
 
@@ -89,8 +89,8 @@ Quando o estado muda para ON, os hooks de WebSocket/EventSource fecham conexões
   2. Status `ATIVANDO`.
   3. Instala a regra DNR de bloqueio.
   4. Desliga a predição de rede.
-  5. Recalcula o status (erros de 3–4 entram como motivos).
-  6. Propaga o estado às páginas (`applyPageState`: re-registro, broadcast, injeção).
+  5. Propaga o estado às páginas (`applyPageState`: re-registro, broadcast, injeção).
+  6. Só então recalcula e publica o status final (erros de 3–4 entram como motivos). Assim o badge `ON`/PROTEGIDO não aparece antes de as páginas abertas terem recebido o estado ON.
 - **Desligar** (`disable`): remove a regra DNR → restaura a predição (`clear()`) → salva `enabled: false` → status `DESLIGADO` → propaga às páginas. Na janela entre remover a regra e atualizar as páginas, os hooks ainda estão ON e continuam falhando as requisições: o erro é sempre para o lado do bloqueio.
 - **Modo** (`setMode`): salva e propaga às páginas (troca o `state-*.js`).
 - **Inicialização** (todo wake-up do service worker, promessa `ready`): carrega configurações e histórico, remove regras `allow` órfãs, e se `enabled` reinstala regra e privacy, recalcula status e re-registra content scripts. Todas as mensagens esperam `ready`. Teste: `background.spec.ts › ON survives browser restart`.
@@ -105,9 +105,12 @@ Requisições `HELD` existentes ao desligar permanecem `HELD`.
 2. **Matcher confirma** (`verifyBlockRule`): `testMatchOutcome` para cada tipo × URLs de amostra (`http`/`https`; `ws`/`wss` para `websocket`) retorna a regra 1 do ruleset `_dynamic`. Se `testMatchOutcome` não existir (extensão não descompactada), o status é incompleto.
 3. **Predição de rede** (`verifyPrediction`): `networkPredictionEnabled` com `value: false` e `levelOfControl: controlled_by_this_extension` (uma política corporativa que controla a configuração derruba o status).
 
-Qualquer falha → `PROTEÇÃO INCOMPLETA` com a lista de motivos; exceção na verificação também vira motivo. O status é recalculado ao ligar, a cada wake-up do service worker e em todo `getState` (popup/painel). Avisos permanentes (não rebaixam o status): acesso a modo anônimo desligado.
+Qualquer falha → `PROTEÇÃO INCOMPLETA` com a lista de motivos; exceção na verificação também vira motivo. O status é recalculado ao ligar, a cada wake-up do service worker e em todo `getState` (popup/painel). Avisos (`warnings`, não rebaixam o status, exibidos no popup):
 
-Badge: `ON` vermelho (protegido), `!` laranja (incompleto), `…` laranja (ativando), vazio (desligado).
+- acesso a modo anônimo desligado (ON ou OFF);
+- com ON, **sempre** as lacunas permanentes (`PERMANENT_GAPS` em `status.ts`): conexões abertas antes de ligar podem continuar ativas; workers/formulários/navegações/tags HTML registrados sem headers/body; não bloqueado (WebRTC, tráfego interno do Chrome, outras extensões, requisições em voo); Reporting API não verificada. Teste: `background.spec.ts › enabled status lists the permanent gaps`.
+
+Badge: `ON` vermelho (protegido), `!` laranja (incompleto), `…` laranja (ativando), vazio (desligado). Ícone (`chrome.action.setIcon`): variante `icons/on-*.png` sempre que o status não é `OFF`, `icons/off-*.png` quando desligado. Badge e ícone são atualizados em `setStatus` (`updateBadge`).
 
 Testes: `background.spec.ts › enable → PROTECTED`, `forced DNR failure → INCOMPLETE`, `rule removed externally → INCOMPLETE on getState`, `disable → OFF, rule removed, prediction restored`.
 
@@ -120,7 +123,10 @@ Observação: a verificação 3 consulta o escopo regular. No escopo anônimo a 
 - Ring buffer em memória, limite configurável (padrão 1000, faixa 100–10000, `clampLimit`), descarta os mais antigos; ordem por `seq` monotônico global.
 - Persistência em `chrome.storage.local` (`ni_history`, `ni_seq`) com debounce de 300 ms; recarregada a cada wake-up do service worker. Configurações em `ni_settings`.
 - Permissão `unlimitedStorage`: 10000 registros com bodies (até 1 MB de texto cada) estourariam a cota padrão de 10 MB.
-- **Modo anônimo**: registros de abas anônimas (`incognito: true`) ficam só em memória — filtrados na gravação. Somem quando o service worker reinicia ou o histórico é limpo.
+- **Modo anônimo**: registros anônimos (`incognito: true`) ficam só em memória — filtrados na gravação. Somem quando o service worker reinicia ou o histórico é limpo. Na dúvida, o registro é anônimo:
+  - registros de hook usam `sender.tab.incognito`; sem aba conhecida → anônimo;
+  - registros do fallback (`dnrlog.ts`) usam `isIncognitoTab` (`src/background/incognito.ts`): com `tabId >= 0`, a flag da aba, e se `tabs.get` falhar → anônimo; com `tabId -1` (ex.: service worker, a requisição não diz o perfil) → anônimo se existir alguma janela anônima aberta (ou se essa consulta falhar).
+  - Testes: `test/unit/incognito.spec.ts` (4 casos), `background.spec.ts › incognito records not persisted`.
 - Limpar apaga memória e storage.
 - Corpo: texto acima de 1 MB truncado com tamanho original; binário vira `{size, mime, previewHex}` (primeiros 64 bytes); `ReadableStream` não é lido (`src/shared/body.ts`).
 - O objeto original (body real, `Request`, XHR) usado para Liberar fica só na memória da página; nunca vai ao background.
@@ -137,6 +143,16 @@ Observação: a verificação 3 consulta o escopo regular. No escopo anônimo a 
 6. Na inicialização do service worker todas as regras `allow` (ids ≥ 1000) são removidas.
 
 Descartar: `doDiscard` → o hook falha a requisição como no modo Falhar → `DISCARDED`. `tabs.onRemoved` e `webNavigation.onCommitted` marcam os `HELD` da aba/frame como `DISCARDED_PAGE_GONE`.
+
+## Visualização ao vivo
+
+- Popup, visualizador e painel DevTools conectam ao port `ni-ui` (`UI_PORT` em `src/shared/messages.ts`) via `connectUi` (`src/ui/client.ts`). Ao conectar, o background posta `{type:'state'}` (snapshot do `ExtState`) e `{type:'records'}` (lista inteira de registros).
+- Mudanças no histórico (`onHistoryChange`), no status (`setStatus`) e em `ni_settings` (`storage.onChanged`) chamam `scheduleUiPush`, que agrupa as mudanças com throttle de ~150 ms e reenvia estado + **lista completa** a todos os ports.
+- Só páginas da própria extensão podem conectar (o background desconecta ports de outra origem).
+- Se o service worker for encerrado por inatividade, o port cai e a UI reconecta sozinha (300 ms; 1 s se `connect` lançar).
+- Ações (ligar, modo, limite, limpar, liberar, descartar) usam `chrome.runtime.sendMessage` (`send`); o popup também faz `getState` ao abrir, o que dispara a reverificação do status.
+- A UI monta todo texto via `textContent`/nós de texto (`el`), nunca `innerHTML` (`ui.spec.ts › xss safe`). Cópia de cURL: Clipboard API com fallback para `execCommand('copy')` (necessário no painel DevTools).
+- Limitação: o push e a persistência são da lista inteira, não incrementais; com limite alto e bodies grandes isso pesa (ver "Limitações conhecidas" no README).
 
 ## Build
 
