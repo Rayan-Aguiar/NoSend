@@ -12,7 +12,6 @@ export function installFetchHook(ctx: HookCtx): void {
 
   const hooked = function fetch(this: unknown, input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
     const state = ctx.getState();
-    // eslint-disable-next-line prefer-rest-params
     const isReq = typeof Request !== 'undefined' && input instanceof Request;
     if (!state.enabled || isLocalUrl(resolveUrl(isReq ? (input as Request).url : input))) {
       // eslint-disable-next-line prefer-rest-params
