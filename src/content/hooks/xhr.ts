@@ -60,7 +60,13 @@ export function installXhrHook(ctx: HookCtx): void {
       throw new DOMException(`Failed to execute 'send' on 'XMLHttpRequest': Failed to load '${m.url}'.`, 'NetworkError');
     }
     if (held) {
-      ctx.registerHeld(hookId, () => nSend.call(this, body), () => failAsync(this));
+      const xhr = this;
+      ctx.registerHeld(hookId, () => {
+        xhr.addEventListener('loadend', () => {
+          ctx.emit({ type: 'heldOutcome', hookId, ok: xhr.status > 0, status: xhr.status, error: xhr.status > 0 ? undefined : 'falha de rede' });
+        }, { once: true });
+        nSend.call(xhr, body);
+      }, () => failAsync(xhr));
       return;
     }
     failAsync(this);

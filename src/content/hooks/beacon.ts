@@ -22,7 +22,10 @@ export function installBeaconHook(ctx: HookCtx): void {
     });
     if (held) {
       const nav = this;
-      ctx.registerHeld(hookId, () => { nBeacon.call(nav, url, data); }, () => {});
+      ctx.registerHeld(hookId, () => {
+        const queued = nBeacon.call(nav, url, data);
+        ctx.emit({ type: 'heldOutcome', hookId, ok: queued, error: queued ? undefined : 'sendBeacon recusou o envio' });
+      }, () => {});
       return true; // o navegador também retorna true ao enfileirar
     }
     return false;

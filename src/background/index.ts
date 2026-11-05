@@ -10,6 +10,7 @@ import {
 } from './history';
 import { startDnrLog } from './dnrlog';
 import { broadcastState, injectIntoOpenTabs, syncContentScripts } from './injection';
+import { discardRecord, recordHeldOutcome, releaseRecord, startReleaseTracking } from './release';
 
 let status: StatusResult = { status: 'OFF', reasons: [], warnings: [] };
 /** Erros da última ativação; somados aos motivos da verificação até o próximo toggle. */
@@ -179,6 +180,13 @@ export async function handle(req: BgRequest, sender?: chrome.runtime.MessageSend
     case 'hookRecord':
       if (!validHookRecord(req.record)) return { error: 'registro inválido' };
       return { id: recordFromHook(req.record, sender).id };
+    case 'heldOutcome':
+      recordHeldOutcome(req.hookId, sender?.tab?.id, { ok: !!req.ok, status: req.status, error: req.error });
+      return { ok: true };
+    case 'release':
+      return releaseRecord(req.id);
+    case 'discard':
+      return discardRecord(req.id);
     case 'hookHeartbeat':
       if (sender?.tab?.id !== undefined) hookedTabs.add(sender.tab.id);
       return { ok: true };
@@ -192,6 +200,7 @@ chrome.runtime.onMessage.addListener((msg: BgRequest, sender, sendResponse) => {
   return true;
 });
 startDnrLog(ready);
+startReleaseTracking();
 
 chrome.tabs.onRemoved.addListener((tabId) => { hookedTabs.delete(tabId); });
 chrome.runtime.onInstalled.addListener(async () => {

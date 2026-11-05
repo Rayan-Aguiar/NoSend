@@ -33,7 +33,12 @@ export function installFetchHook(ctx: HookCtx): void {
       return new Promise<Response>((resolve, reject) => {
         ctx.registerHeld(
           hookId,
-          () => { nativeFetch.call(window, input, init).then(resolve, reject); },
+          () => {
+            nativeFetch.call(window, input, init).then(
+              (r) => { ctx.emit({ type: 'heldOutcome', hookId, ok: true, status: r.status }); resolve(r); },
+              (e) => { ctx.emit({ type: 'heldOutcome', hookId, ok: false, error: String((e as Error)?.message ?? e) }); reject(e); },
+            );
+          },
           () => reject(networkError()),
         );
       });
