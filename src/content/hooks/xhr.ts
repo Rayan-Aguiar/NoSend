@@ -30,10 +30,14 @@ export function installXhrHook(ctx: HookCtx): void {
     return nSetHeader.call(this, name, value);
   };
 
-  /** Falha de rede como o navegador reporta: `loadstart` (síncrono, como no send() nativo) com
-   *  readyState 1; depois, em outra tarefa, readyState 4, status 0, readystatechange, error, loadend. */
-  function failAsync(xhr: XMLHttpRequest): void {
+  /** loadstart como o send() nativo dispara: síncrono, com readyState 1. */
+  function fireLoadstart(xhr: XMLHttpRequest): void {
     xhr.dispatchEvent(new ProgressEvent('loadstart'));
+  }
+
+  /** Falha de rede como o navegador reporta, em outra tarefa: readyState 4, status 0,
+   *  readystatechange, error, loadend. O loadstart já foi disparado no send(). */
+  function failAsync(xhr: XMLHttpRequest): void {
     setTimeout(() => {
       const values = { readyState: 4, status: 0, statusText: '', response: '', responseText: '', responseURL: '' };
       for (const [k, v] of Object.entries(values)) Object.defineProperty(xhr, k, { value: v, configurable: true });
@@ -42,6 +46,42 @@ export function installXhrHook(ctx: HookCtx): void {
       xhr.dispatchEvent(new ProgressEvent('loadend'));
     }, 0);
   }
+
+  // ---- portão de loadstart ----
+  // Segurar dispara o loadstart no send() (como o nativo). Ao Liberar, o send() nativo dispara
+  // outro, que a aplicação não pode ver. O Chrome chama os listeners do alvo na ordem de registro
+  // (captura não passa à frente), então o portão é registrado na construção, antes de qualquer
+  // listener da aplicação, e só barra eventos durante a chamada nativa da liberação.
+  const nAddListener = EventTarget.prototype.addEventListener;
+  const releasing = new WeakSet<XMLHttpRequest>();
+  const gate = (e: Event) => { if (releasing.has(e.currentTarget as XMLHttpRequest)) e.stopImmediatePropagation(); };
+
+  /** send() nativo da liberação sem repetir o loadstart que a aplicação já recebeu. */
+  function releaseSend(xhr: XMLHttpRequest, body: unknown): void {
+    releasing.add(xhr);
+    try { nSend.call(xhr, body as any); } finally { releasing.delete(xhr); }
+  }
+
+  const NativeXHR = XMLHttpRequest;
+  const XHR = function XMLHttpRequest(this: unknown): XMLHttpRequest {
+    if (!new.target) {
+      throw new TypeError("Failed to construct 'XMLHttpRequest': Please use the 'new' operator, this DOM object constructor cannot be called as a function.");
+    }
+    const xhr: XMLHttpRequest = Reflect.construct(NativeXHR, [], new.target);
+    nAddListener.call(xhr, 'loadstart', gate);
+    return xhr;
+  };
+  // Fidelidade: mesmo protótipo, constantes estáticas, herança, name/length/toString.
+  for (const [k, d] of Object.entries(Object.getOwnPropertyDescriptors(NativeXHR))) {
+    if (k === 'prototype' || k === 'name' || k === 'length') continue;
+    Object.defineProperty(XHR, k, d);
+  }
+  Object.defineProperty(XHR, 'prototype', { value: P, writable: false, enumerable: false, configurable: false });
+  Object.setPrototypeOf(XHR, Object.getPrototypeOf(NativeXHR));
+  Object.defineProperty(P, 'constructor', { value: XHR, writable: true, enumerable: false, configurable: true });
+  disguise(XHR, NativeXHR);
+  const desc = Object.getOwnPropertyDescriptor(globalThis, 'XMLHttpRequest');
+  Object.defineProperty(globalThis, 'XMLHttpRequest', { ...desc, value: XHR });
 
   const send = function send(this: XMLHttpRequest, body?: Document | XMLHttpRequestBodyInit | null) {
     const state = ctx.getState();
@@ -61,15 +101,15 @@ export function installXhrHook(ctx: HookCtx): void {
     if (!m.async) {
       throw new DOMException(`Failed to execute 'send' on 'XMLHttpRequest': Failed to load '${m.url}'.`, 'NetworkError');
     }
+    fireLoadstart(this);
     if (held) {
-      // Segurado: nenhum evento até a decisão. Liberar chama o send() nativo (que dispara o
-      // próprio loadstart); Descartar segue a sequência de falha de rede.
+      // Segurado: loadstart já disparado (como no nativo); nada mais até a decisão.
       const xhr = this;
       ctx.registerHeld(hookId, () => {
         xhr.addEventListener('loadend', () => {
           ctx.emit({ type: 'heldOutcome', hookId, ok: xhr.status > 0, status: xhr.status, error: xhr.status > 0 ? undefined : 'falha de rede' });
         }, { once: true });
-        nSend.call(xhr, body);
+        releaseSend(xhr, body);
       }, () => failAsync(xhr));
       return;
     }

@@ -247,3 +247,64 @@ test('HELD becomes DISCARDED_PAGE_GONE when a blocked navigation replaces the pa
   expect((await ext.send({ type: 'getState' })).heldCount).toBe(0);
   expect(sink.connections).toBe(0);
 });
+
+/** XHR segurado com log de eventos em window.__x[key]. */
+function startXhr(page: Page, key: string, url: string) {
+  return page.evaluate(([k, u]) => {
+    const w = window as any;
+    w.__x ??= {};
+    const log: string[] = [];
+    const x = new XMLHttpRequest();
+    for (const ev of ['loadstart', 'readystatechange', 'load', 'error', 'loadend']) {
+      x.addEventListener(ev, () => log.push(`${ev}:${x.readyState}`));
+    }
+    x.onloadstart = () => log.push('onloadstart');
+    x.open('POST', u);
+    log.length = 0;
+    x.send('{"x":1}');
+    w.__x[k] = { log, afterSend: x.readyState, x };
+  }, [key, url] as const);
+}
+const xhrLog = (page: Page, key: string) => page.evaluate((k) => ({ log: (window as any).__x[k].log, afterSend: (window as any).__x[k].afterSend }), key);
+
+test('held XHR fires loadstart at send, once, and not again on release', async ({ ext, openApp, page, sink }) => {
+  await openApp();
+  await holdOn(ext);
+  await startXhr(page, 'a', sink.origin + '/xhr-held');
+  expect(await xhrLog(page, 'a')).toEqual({ log: ['loadstart:1', 'onloadstart'], afterSend: 1 });
+  const rec = await recordFor(ext, '/xhr-held', 'HELD');
+  expect(await ext.send({ type: 'release', id: rec.id })).toEqual({ ok: true });
+  await expect.poll(async () => (await xhrLog(page, 'a')).log.at(-1)).toBe('loadend:4');
+  const { log } = await xhrLog(page, 'a');
+  expect(log.filter((e: string) => e.startsWith('loadstart') || e === 'onloadstart')).toEqual(['loadstart:1', 'onloadstart']);
+  expect(log.slice(-2)).toEqual(['load:4', 'loadend:4']);
+  expect(nonPreflight(sink, '/xhr-held').length).toBe(1);
+});
+
+test('held XHR discarded: single loadstart, then network-error sequence', async ({ ext, openApp, page, sink }) => {
+  await openApp();
+  await holdOn(ext);
+  await startXhr(page, 'a', sink.origin + '/xhr-drop');
+  expect(await xhrLog(page, 'a')).toEqual({ log: ['loadstart:1', 'onloadstart'], afterSend: 1 });
+  const rec = await recordFor(ext, '/xhr-drop', 'HELD');
+  await ext.send({ type: 'discard', id: rec.id });
+  await expect.poll(async () => (await xhrLog(page, 'a')).log.at(-1)).toBe('loadend:4');
+  expect((await xhrLog(page, 'a')).log).toEqual(['loadstart:1', 'onloadstart', 'readystatechange:4', 'error:4', 'loadend:4']);
+  expect(sink.connections).toBe(0);
+});
+
+test('XMLHttpRequest constructor keeps native identity', async ({ openApp, page }) => {
+  await openApp();
+  const r = await page.evaluate(() => {
+    class Sub extends XMLHttpRequest {}
+    const x = new XMLHttpRequest();
+    let callErr = '';
+    try { (XMLHttpRequest as any)(); } catch (e) { callErr = (e as Error).name; }
+    return {
+      name: XMLHttpRequest.name, len: XMLHttpRequest.length, str: Function.prototype.toString.call(XMLHttpRequest),
+      inst: x instanceof XMLHttpRequest, ctor: x.constructor === XMLHttpRequest, done: XMLHttpRequest.DONE,
+      sub: new Sub() instanceof Sub && new Sub() instanceof XMLHttpRequest, callErr,
+    };
+  });
+  expect(r).toEqual({ name: 'XMLHttpRequest', len: 0, str: expect.stringContaining('[native code]'), inst: true, ctor: true, done: 4, sub: true, callErr: 'TypeError' });
+});
