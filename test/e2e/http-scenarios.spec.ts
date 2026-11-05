@@ -141,3 +141,57 @@ test.describe('interceptor OFF', () => {
     expect(await ext.send({ type: 'getRecords' })).toEqual([]);
   });
 });
+
+test.describe('fetch record fidelity (what the browser would send)', () => {
+  const recFor = async (ext: any, path: string) => {
+    let rec: InterceptedRequest | undefined;
+    await expect.poll(async () => {
+      rec = ((await ext.send({ type: 'getRecords' })) as InterceptedRequest[]).find((x) => new URL(x.url).pathname === path);
+      return !!rec;
+    }).toBe(true);
+    return rec!;
+  };
+
+  test('implicit Content-Type is recorded for string / URLSearchParams / FormData bodies', async ({ ext, openApp, page, sink }) => {
+    await openApp();
+    await ext.send({ type: 'setEnabled', enabled: true });
+    await page.evaluate((s) => {
+      const fd = new FormData(); fd.append('a', '1');
+      return Promise.allSettled([
+        fetch(s + '/str', { method: 'POST', body: '{"a":1}' }),
+        fetch(s + '/usp', { method: 'POST', body: new URLSearchParams({ a: '1' }) }),
+        fetch(s + '/fd', { method: 'POST', body: fd }),
+      ]);
+    }, sink.origin);
+    expect((await recFor(ext, '/str')).contentType).toBe('text/plain;charset=UTF-8');
+    expect((await recFor(ext, '/usp')).contentType).toBe('application/x-www-form-urlencoded;charset=UTF-8');
+    expect((await recFor(ext, '/fd')).contentType).toMatch(/^multipart\/form-data; boundary=/);
+    expect(sink.connections).toBe(0);
+  });
+
+  test('forbidden headers are not recorded; app headers keep their original name', async ({ ext, openApp, page, sink }) => {
+    await openApp();
+    await ext.send({ type: 'setEnabled', enabled: true });
+    await page.evaluate((s) => fetch(s + '/hdr', { headers: { Cookie: 'sid=1', Host: 'evil', 'X-Custom': 'v' } }).catch(() => {}), sink.origin);
+    const rec = await recFor(ext, '/hdr');
+    expect(hdr(rec, 'cookie')).toBeUndefined();
+    expect(hdr(rec, 'host')).toBeUndefined();
+    expect(rec.headers).toContainEqual(['X-Custom', 'v']);
+    expect(sink.connections).toBe(0);
+  });
+
+  test('invalid fetch rejects like native and records nothing', async ({ ext, openApp, page, sink }) => {
+    await openApp();
+    await ext.send({ type: 'setEnabled', enabled: true });
+    const r = await page.evaluate((s) => Promise.all([
+      fetch('http://[bad/invalid').then(() => 'resolved', (e) => `${e.name}:${/parse URL/.test(e.message)}`),
+      fetch(s + '/getbody', { method: 'GET', body: 'x' }).then(() => 'resolved', (e) => e.name),
+      fetch(s + '/after').then(() => 'resolved', (e) => e.name),
+    ]), sink.origin);
+    expect(r).toEqual(['TypeError:true', 'TypeError', 'TypeError']);
+    await recFor(ext, '/after'); // controle positivo: o hook está registrando
+    const recs: InterceptedRequest[] = await ext.send({ type: 'getRecords' });
+    expect(recs.some((x) => x.url.includes('[bad') || x.url.endsWith('/getbody'))).toBe(false);
+    expect(sink.connections).toBe(0);
+  });
+});
