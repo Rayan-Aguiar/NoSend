@@ -190,3 +190,33 @@ test('websocket ignores hold (fails immediately)', async ({ ext, openApp, page, 
   expect(recs.find((r: any) => r.kind === 'websocket')?.status).toBe('BLOCKED');
   expect(sink.connections).toBe(0);
 });
+
+test('clear history discards HELD requests (page gets network error)', async ({ ext, openApp, page, sink }) => {
+  await openApp();
+  await holdOn(ext);
+  await startFetch(page, 'a', sink.origin + '/users', JSON_INIT);
+  await recordFor(ext, '/users', 'HELD');
+  await ext.send({ type: 'clear' });
+  await expect.poll(() => result(page, 'a')).toBe('rejected:TypeError');
+  expect(sink.connections).toBe(0);
+});
+
+test('HELD evicted by history limit is discarded (page gets network error)', async ({ ext, openApp, page, sink }) => {
+  await openApp();
+  await ext.send({ type: 'setLimit', limit: 100 });
+  await holdOn(ext);
+  await startFetch(page, 'a', sink.origin + '/users', JSON_INIT);
+  await recordFor(ext, '/users', 'HELD');
+  // Empurra 100 registros novos: o HELD sai do buffer.
+  await ext.eval(async (n) => {
+    for (let i = 0; i < n; i++) {
+      (globalThis as any).niDebug.addRecord({
+        timestamp: new Date().toISOString(), url: `https://example.test/${i}`, method: 'GET', query: [], headers: [],
+        contentType: null, body: null, kind: 'fetch', source: 'dnr', status: 'BLOCKED', origin: { tabId: -1 }, notes: [],
+      });
+    }
+  }, 100);
+  await expect.poll(() => result(page, 'a')).toBe('rejected:TypeError');
+  expect((await ext.send({ type: 'getState' })).heldCount).toBe(0);
+  expect(sink.connections).toBe(0);
+});

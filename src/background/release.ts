@@ -5,7 +5,7 @@ import type { InterceptedRequest } from '../shared/types';
 import type { TabMessage } from '../shared/messages';
 import { canRelease } from '../shared/regex';
 import { addAllowRule, removeAllowRule } from './dnr';
-import { findRecord, getRecords, updateRecord } from './history';
+import { findRecord, getRecords, onEvicted, updateRecord } from './history';
 
 const RELEASE_TIMEOUT_MS = 10_000;
 const pending = new Map<number, { method: string; timer: ReturnType<typeof setTimeout> }>();
@@ -82,6 +82,15 @@ function markGone(pred: (r: InterceptedRequest) => boolean): void {
 }
 
 export function startReleaseTracking(): void {
+  // HELD que sai do histórico (limite ou Limpar) não pode mais ser decidido pelo usuário:
+  // descarta na página para ela receber erro de rede em vez de ficar pendente para sempre.
+  onEvicted((removed) => {
+    for (const r of removed) {
+      if (r.status !== 'HELD' || !r.hookId) continue;
+      const msg: TabMessage = { type: 'doDiscard', hookId: r.hookId };
+      void chrome.tabs.sendMessage(r.origin.tabId, msg, { frameId: r.origin.frameId ?? 0 }).catch(() => {});
+    }
+  });
   // Remove a exceção assim que a requisição original passa por ela.
   chrome.declarativeNetRequest.onRuleMatchedDebug?.addListener((info) => {
     const p = pending.get(info.rule.ruleId);

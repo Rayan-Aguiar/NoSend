@@ -7,14 +7,20 @@ export class RingBuffer<T> {
     this.limit = Math.max(1, Math.floor(limit));
   }
 
-  push(x: T): void {
+  /** Insere e devolve os itens descartados por excesso. */
+  push(x: T): T[] {
     this.items.push(x);
-    if (this.items.length > this.limit) this.items.splice(0, this.items.length - this.limit);
+    return this.trim();
   }
 
-  setLimit(n: number): void {
+  /** Ajusta o limite e devolve os itens descartados por excesso. */
+  setLimit(n: number): T[] {
     this.limit = Math.max(1, Math.floor(n));
-    if (this.items.length > this.limit) this.items.splice(0, this.items.length - this.limit);
+    return this.trim();
+  }
+
+  private trim(): T[] {
+    return this.items.length > this.limit ? this.items.splice(0, this.items.length - this.limit) : [];
   }
 
   toArray(): T[] {

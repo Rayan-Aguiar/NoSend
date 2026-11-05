@@ -10,6 +10,19 @@ let buf = new RingBuffer<InterceptedRequest>(DEFAULT_SETTINGS.limit);
 let seq = 0;
 let timer: ReturnType<typeof setTimeout> | null = null;
 const listeners = new Set<Listener>();
+type EvictListener = (removed: InterceptedRequest[]) => void;
+const evictListeners = new Set<EvictListener>();
+
+/** Avisa quem precisa reagir a registros que saem do histórico (limite ou Limpar). */
+function evicted(removed: InterceptedRequest[]): void {
+  if (!removed.length) return;
+  for (const l of evictListeners) { try { l(removed); } catch { /* ouvinte */ } }
+}
+
+export function onEvicted(cb: EvictListener): () => void {
+  evictListeners.add(cb);
+  return () => evictListeners.delete(cb);
+}
 
 function notify(): void { for (const l of listeners) { try { l(); } catch { /* listener de UI */ } } }
 
@@ -37,7 +50,7 @@ export async function loadHistory(limit: number): Promise<void> {
 
 export function addRecord(partial: Omit<InterceptedRequest, 'id' | 'seq'>): InterceptedRequest {
   const rec: InterceptedRequest = { ...partial, id: crypto.randomUUID(), seq: ++seq };
-  buf.push(rec);
+  evicted(buf.push(rec));
   schedulePersist();
   notify();
   return rec;
@@ -62,13 +75,15 @@ export function getRecords(tabId?: number): InterceptedRequest[] {
 }
 
 export async function clearRecords(): Promise<void> {
+  const removed = buf.toArray();
   buf.clear();
+  evicted(removed);
   await flushHistory();
   notify();
 }
 
 export function setHistoryLimit(n: number): void {
-  buf.setLimit(n);
+  evicted(buf.setLimit(n));
   schedulePersist();
   notify();
 }

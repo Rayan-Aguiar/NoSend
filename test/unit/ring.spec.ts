@@ -25,3 +25,12 @@ test('order preserved and clear', () => {
   expect(r.toArray()).toEqual([]);
   expect(r.size).toBe(0);
 });
+
+test('push and setLimit return the evicted items', () => {
+  const r = new RingBuffer<number>(2);
+  expect(r.push(1)).toEqual([]);
+  r.push(2);
+  expect(r.push(3)).toEqual([1]);
+  r.push(4);
+  expect(r.setLimit(1)).toEqual([3]);
+});
