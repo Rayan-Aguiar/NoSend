@@ -1,5 +1,5 @@
 // Background service worker: estado, status fail-safe, histórico e roteamento de mensagens.
-import type { BgRequest } from '../shared/messages';
+import { UI_PORT, type BgRequest } from '../shared/messages';
 import type { ExtState, HookRecord, InterceptedRequest, RequestKind } from '../shared/types';
 import { installBlockRule, removeBlockRule, removeAllAllowRules } from './dnr';
 import { disablePrediction, restorePrediction } from './privacy';
@@ -16,6 +16,9 @@ let status: StatusResult = { status: 'OFF', reasons: [], warnings: [] };
 /** Erros da última ativação; somados aos motivos da verificação até o próximo toggle. */
 let activationErrors: string[] = [];
 const hookedTabs = new Set<number>();
+/** Ports de UI conectados (popup, painel, visualizador). */
+const uiPorts = new Set<chrome.runtime.Port>();
+let uiTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ---- serialização: toggles e leituras de estado nunca se intercalam ----
 let chain: Promise<unknown> = Promise.resolve();
@@ -36,11 +39,16 @@ async function updateBadge(): Promise<void> {
   const b = map[status.status];
   await chrome.action?.setBadgeText({ text: b.text }).catch(() => {});
   await chrome.action?.setBadgeBackgroundColor({ color: b.color }).catch(() => {});
+  // Ícone com variante ON sempre que a extensão está ligada (inclusive INCOMPLETE/ACTIVATING).
+  const v = status.status === 'OFF' ? 'off' : 'on';
+  const path = Object.fromEntries([16, 32, 48, 128].map((s) => [String(s), `icons/${v}-${s}.png`]));
+  await chrome.action?.setIcon({ path }).catch(() => {});
 }
 
 async function setStatus(s: StatusResult): Promise<void> {
   status = s;
   await updateBadge();
+  scheduleUiPush();
 }
 
 async function snapshot(): Promise<ExtState> {
@@ -209,7 +217,42 @@ chrome.runtime.onInstalled.addListener(async () => {
   await injectIntoOpenTabs({ enabled: s.enabled, mode: s.mode }).catch(() => {});
 });
 
-onHistoryChange(() => { /* UI ao vivo: Task 9 */ });
+// ---- UI ao vivo (popup, painel DevTools, visualizador) via port ----
+// Ao conectar: estado + registros. Mudanças no histórico/estado: push com throttle (~150 ms).
+async function pushUi(ports: Iterable<chrome.runtime.Port>): Promise<void> {
+  const list = [...ports];
+  if (!list.length) return;
+  const state = await snapshot();
+  const records = getRecords();
+  for (const port of list) {
+    try {
+      port.postMessage({ type: 'state', state });
+      port.postMessage({ type: 'records', records });
+    } catch { uiPorts.delete(port); }
+  }
+}
+
+function scheduleUiPush(): void {
+  if (uiTimer || !uiPorts.size) return;
+  uiTimer = setTimeout(() => { uiTimer = null; void pushUi(uiPorts); }, 150);
+}
+
+chrome.runtime.onConnect.addListener((port) => {
+  if (port.name !== UI_PORT) return;
+  // Só páginas da própria extensão (popup, painel, visualizador).
+  if (port.sender?.id !== chrome.runtime.id || (port.sender.tab && !port.sender.url?.startsWith(chrome.runtime.getURL('')))) {
+    port.disconnect();
+    return;
+  }
+  uiPorts.add(port);
+  port.onDisconnect.addListener(() => uiPorts.delete(port));
+  void ready.then(() => pushUi([port]));
+});
+
+onHistoryChange(scheduleUiPush);
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === 'local' && changes.ni_settings) scheduleUiPush();
+});
 
 const debug: Record<string, unknown> = { handle: (r: BgRequest) => handle(r) };
 if (__TEST__) {

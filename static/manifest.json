@@ -14,7 +14,29 @@
     "webNavigation",
     "unlimitedStorage"
   ],
-  "host_permissions": ["<all_urls>"],
-  "background": { "service_worker": "background.js", "type": "module" },
-  "incognito": "spanning"
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "incognito": "spanning",
+  "icons": {
+    "16": "icons/off-16.png",
+    "32": "icons/off-32.png",
+    "48": "icons/off-48.png",
+    "128": "icons/off-128.png"
+  },
+  "action": {
+    "default_title": "Network Interceptor",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/off-16.png",
+      "32": "icons/off-32.png",
+      "48": "icons/off-48.png",
+      "128": "icons/off-128.png"
+    }
+  },
+  "devtools_page": "devtools.html"
 }

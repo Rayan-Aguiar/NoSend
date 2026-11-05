@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Network Interceptor</title>
+<link rel="stylesheet" href="ui.css">
+</head>
+<body class="ni-popup">
+<header class="ni-head">
+  <h1>Network Interceptor</h1>
+  <label class="ni-switch" title="Ligar/desligar interceptação">
+    <input type="checkbox" id="ni-toggle" role="switch" aria-label="Interceptação ligada">
+    <span class="ni-slider" aria-hidden="true"></span>
+  </label>
+</header>
+
+<div id="ni-status" class="ni-status" role="status" aria-live="polite"><strong>…</strong></div>
+<ul id="ni-reasons" class="ni-reasons" hidden></ul>
+
+<div class="ni-row2">
+  <label>Modo
+    <select id="ni-mode">
+      <option value="fail">Falhar</option>
+      <option value="hold">Segurar</option>
+    </select>
+  </label>
+  <label>Limite do histórico
+    <input id="ni-limit" type="number" min="100" max="10000" step="100">
+  </label>
+</div>
+
+<dl class="ni-counters">
+  <div><dt>Interceptadas</dt><dd id="ni-count">0</dd></div>
+  <div><dt>Seguradas (HELD)</dt><dd id="ni-held">0</dd></div>
+</dl>
+
+<div class="ni-buttons">
+  <button id="ni-open-viewer">Abrir visualizador</button>
+  <button id="ni-clear">Limpar histórico</button>
+</div>
+<p class="ni-hint">Painel completo: F12 → aba <b>Network Interceptor</b></p>
+<ul id="ni-warnings" class="ni-warnings" hidden></ul>
+<p id="ni-msg" class="ni-msg" role="alert"></p>
+<script src="popup.js"></script>
+</body>
+</html>
