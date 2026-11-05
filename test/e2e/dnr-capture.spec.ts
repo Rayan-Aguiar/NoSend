@@ -110,10 +110,16 @@ test('query parsed from URL preserving order and duplicates', async ({ openApp, 
 test('placeholder ignored', async ({ openApp, sink, ext, page }) => {
   await openApp();
   await ext.send({ type: 'setEnabled', enabled: true });
-  await page.evaluate(() => fetch('https://blocked.invalid/').catch(() => {}));
-  await page.evaluate(() => fetch('https://x.blocked.invalid/').catch(() => {}));
+  // Requisições feitas de um worker (sem hooks) chegam ao DNR, como as dos placeholders.
+  await page.evaluate((s) => {
+    const code = `Promise.all([
+      fetch('https://blocked.invalid/').catch(() => {}),
+      fetch('https://x.blocked.invalid/').catch(() => {}),
+    ]).then(() => fetch(${JSON.stringify(s + '/after')}).catch(() => {})).then(() => postMessage('done'));`;
+    const w = new Worker(URL.createObjectURL(new Blob([code], { type: 'text/javascript' })));
+    return new Promise((r) => { w.onmessage = r; });
+  }, sink.origin);
   // Marcador: quando ele aparece, os eventos anteriores já foram processados.
-  await page.evaluate((s) => fetch(s + '/after').catch(() => {}), sink.origin);
   await dnrRecord(ext, sink.origin + '/after');
   const recs = await records(ext);
   expect(recs.filter((r) => r.url.includes('blocked.invalid'))).toEqual([]);

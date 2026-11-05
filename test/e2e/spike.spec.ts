@@ -34,9 +34,9 @@ test('onRuleMatchedDebug fires for xhr, main_frame, worker', async ({ openApp, s
   }, null);
   await ext.send({ type: 'setEnabled', enabled: true });
 
-  await page.evaluate((s) => fetch(s + '/xhr').catch(() => {}), sink.origin);
+  // Após a Task 6 o fetch da página é bloqueado pelo hook antes do DNR; um worker (sem hooks) chega ao DNR.
   await page.evaluate((s) => {
-    const code = `fetch(${JSON.stringify(s + '/w')}).catch(()=>{}).finally(()=>postMessage('done'))`;
+    const code = `fetch(${JSON.stringify(s + '/xhr')}).catch(()=>{}).then(()=>fetch(${JSON.stringify(s + '/w')})).catch(()=>{}).finally(()=>postMessage('done'))`;
     const w = new Worker(URL.createObjectURL(new Blob([code], { type: 'text/javascript' })));
     return new Promise((r) => { w.onmessage = r; });
   }, sink.origin);
